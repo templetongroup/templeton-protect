@@ -185,9 +185,39 @@ in the Dock.
   luminance, so a floor of 120 left the whole crop box at 0.03–0.10 coverage —
   invisible on Radiant's mid blue, a distinct lighter square on Midnight Navy.
 
+## Releasing
+
+`mac/release.sh` — universal build, sign, DMG, notarise, staple, verify.
+`build.sh` stays the fast local loop; it makes something that runs on *this* Mac
+only.
+
+    ./release.sh              # full: signed, notarised, stapled DMG
+    ./release.sh --no-notary  # stop after signing
+
+Identity: `Developer ID Application: Anthony Ricciardi (5VY66S6G3M)`, already in
+the login keychain. Notary credentials are in the keychain profile `AC_PASSWORD`;
+recreate with:
+
+    xcrun notarytool store-credentials AC_PASSWORD \
+      --apple-id <apple-id> --team-id 5VY66S6G3M --password <app-specific-password>
+
+- ⚠️ **Build both architectures.** `swift build` defaults to this machine's, so
+  the app was arm64-only — it would not launch at all on an Intel Mac, which is a
+  silent failure for the customer rather than a warning for us.
+- ⚠️ **`xattr -cr` before signing.** codesign refuses a bundle carrying resource
+  forks or Finder info ("detritus not allowed"), and assets pick those up simply
+  by being copied around.
+- ⚠️ **Staple both the app and the disk image.** The ticket on the image lets it
+  open offline; the one inside the app survives being dragged out of the image.
+- ⚠️ **Test with the quarantine flag set**, or the test proves nothing:
+
+      xattr -w com.apple.quarantine "0083;00000000;Safari;" "Templeton Protect.dmg"
+
+  then mount it and `spctl --assess --type execute`. Anything from a browser
+  carries that flag and it is what Gatekeeper actually reacts to.
+
 ## Still open
 
-- **Unsigned** (TG-285). Gatekeeper will refuse it on any other Mac. A security
-  product cannot ship asking you to override a security warning.
+- Where the DMG is actually hosted for download, and whether it auto-updates.
 - Tony to rotate the keys the scan found (TG-281).
 - Repo public/private and the licence split (TG-282).

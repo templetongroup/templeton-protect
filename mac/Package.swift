@@ -1,8 +1,9 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// ⚠️ NO TEST TARGET, AND NOT BY CHOICE — the same constraint as the AiOS app:
-// this machine has the Command Line Tools, not full Xcode, so XCTest is absent.
+// ⚠️ NO TEST TARGET YET. This said XCTest was absent because the machine had only
+// the Command Line Tools; that stopped being true — xcode-select now points at
+// /Applications/Xcode.app, so a Swift test target is possible and worth adding.
 // The scan rules are pinned by the TypeScript suite in the parent directory,
 // which is the same logic; the Checks executable guards the Swift-only parts.
 let package = Package(
