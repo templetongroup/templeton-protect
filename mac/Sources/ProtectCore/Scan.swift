@@ -23,7 +23,7 @@ private let configNames = try! NSRegularExpression(
 private let transcriptExt = try! NSRegularExpression(pattern: #"\.(jsonl|md|log)$"#)
 
 /// Vendor-specific enough that a match is worth acting on.
-private let keyShapes: [(String, NSRegularExpression)] = [
+let keyShapes: [(String, NSRegularExpression)] = [
     ("Anthropic", try! NSRegularExpression(pattern: #"\bsk-ant-[A-Za-z0-9_-]{20,}\b"#)),
     ("OpenAI", try! NSRegularExpression(pattern: #"\bsk-[A-Za-z0-9_-]{20,}\b"#)),
     ("GitHub", try! NSRegularExpression(pattern: #"\bgh[pousr]_[A-Za-z0-9]{30,}\b"#)),
@@ -244,16 +244,23 @@ public func scanAiInstallations(home: String = NSHomeDirectory(),
                     title: "\(unique.joined(separator: " and ")) \(unique.count == 1 ? "key" : "keys") in a \(ai.tool) transcript",
                     where_: display,
                     evidence: "\(vendors.count) key-shaped value(s) — \(unique.joined(separator: ", ")) — in a conversation log" + (reachable ? ", in a folder other accounts can read" : ""),
-                    remedy: "Rotate those keys, then delete or prune this transcript.",
+                    remedy: "Rotate the keys first — that is the only thing that makes them safe — then take them out of this transcript. " + rotateAdvice(unique) + " Agent history is kept forever by default and nothing prunes it.",
                     validation: "Re-run the scan; this file should report no key-shaped values.",
                     plain: "A conversation with an AI assistant was saved to disk, and \(vendors.count == 1 ? "a password-like key was" : "\(vendors.count) password-like keys were") left sitting in it in plain text" + (reachable ? " — in a folder other accounts on this Mac can read" : "") + ". Keys usually end up here because somebody pasted one into the chat, or a command printed one. These logs are kept forever and nothing clears them out.",
                     verified: true,
-                    fix: FixAction(label: "Delete this transcript",
-                                   // The path is already on the card, in full.
-                                   describes: "Deletes this log for good. You lose that conversation's history, and the keys stay live — only the service that issued them can rotate those.",
-                                   kind: .deleteFile, target: display, mode: nil, destructive: true),
-                    guidance: Guidance(title: "How to rotate a leaked key properly",
-                                       skill: "performing-service-account-credential-rotation")))
+                    /*
+                     ⚠️ REMOVING THE KEY, NOT THE TRANSCRIPT. The first version of
+                     this app offered "Delete this transcript" and nothing else.
+                     Tony: "if it surfaces something like an openai key in a
+                     transcript, how can we delete the entire session from their
+                     folders? that would be incredibly destructive." Somebody's
+                     conversation history is not ours to destroy in order to
+                     clean one value out of it.
+                     */
+                    fix: FixAction(label: "Remove the key from this transcript",
+                                   describes: "Replaces \(vendors.count == 1 ? "the key-shaped value" : "all \(vendors.count) key-shaped values") with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys, and that is the step that matters — they have been sitting in plain text, so treat them as compromised whatever you do here.",
+                                   kind: .redactInFile, target: display, mode: nil, destructive: false),
+                    guidance: rotationSteps(unique, found: "a conversation log")))
                 continue
             }
 
@@ -276,8 +283,12 @@ public func scanAiInstallations(home: String = NSHomeDirectory(),
                                describes: "Sets this file so only your account can read it. Nothing is deleted and the file keeps working.",
                                kind: .chmod, target: display, mode: 0o600, destructive: false),
                 guidance: sensitive
-                    ? Guidance(title: "Keeping credentials out of files in the first place",
-                               skill: "implementing-secrets-management-with-vault")
+                    ? NextSteps(title: "Close it, then assume it was read",
+                        steps: [
+                            "Use the button above. It sets the file so only your account can open it, and nothing else changes.",
+                            "Treat whatever was in it as seen — a file another account could read for an unknown length of time is a file that may have been read.",
+                            "If that includes a live key, replace it at whatever issued it. " + rotateAdvice(findKeys(in: text)),
+                        ])
                     : nil))
         }
 

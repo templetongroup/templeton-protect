@@ -68,7 +68,7 @@ public func exportMarkdown(_ result: ScanResult, on date: Date = Date()) -> Stri
     out.append("")
 
     if result.findings.isEmpty {
-        out.append("Nothing to worry about. No credentials are sitting in your AI conversation logs, and nothing another account on this Mac could read.")
+        out.append("Nothing found in what was scanned. Check the line above for which of the three scans that covers.")
         return out.joined(separator: "\n") + "\n"
     }
 
@@ -89,6 +89,16 @@ public func exportMarkdown(_ result: ScanResult, on date: Date = Date()) -> Stri
         out.append("- **How to check:** \(redact(f.validation))")
         out.append("- **Confirmed:** \(f.verified ? "yes, by a direct check" : "no — pattern match only")")
         out.append("")
+        // ⚠️ THE STEPS TRAVEL WITH THE REPORT. The whole point of an export is
+        // that somebody acts on it away from this app; leaving the steps behind
+        // in the window would hand them the diagnosis and keep the treatment.
+        if let g = f.guidance {
+            out.append("**\(g.title)**")
+            out.append("")
+            for (i, step) in g.steps.enumerated() { out.append("\(i + 1). \(redact(step))") }
+            for link in g.links { out.append("- \(link.label): \(link.url)") }
+            out.append("")
+        }
     }
     return out.joined(separator: "\n") + "\n"
 }
@@ -115,6 +125,9 @@ public func summaryLine(_ result: ScanResult) -> String {
     let c = result.findings.filter { $0.severity == .critical }.count
     let h = result.findings.filter { $0.severity == .high }.count
     let m = result.findings.count - c - h
-    let tools = result.toolsFound.isEmpty ? "no AI installations" : result.toolsFound.joined(separator: ", ")
-    return "Checked \(result.filesRead.formatted()) files across \(tools). Found \(c) critical, \(h) worth fixing, \(m) minor."
+    // ⚠️ "FILES" ALONE STOPPED BEING TRUE when the hardware scan arrived: it
+    // reads fifteen settings and not one file, and a report opening with
+    // "Checked 15 files across This Mac" is wrong in the first sentence.
+    let tools = result.toolsFound.isEmpty ? "nothing" : result.toolsFound.joined(separator: ", ")
+    return "Scanned \(tools). Read \(result.filesRead.formatted()) files and settings. Found \(c) critical, \(h) worth fixing, \(m) minor."
 }

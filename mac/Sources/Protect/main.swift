@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ProtectCore
 
 // Templeton Protect.
 //
@@ -16,7 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // alternative is a nonisolated init reaching into main-actor state.
     let model = Model()
 
-    @objc func scanNow(_ sender: Any?) { model.scan() }
+    // ⚠️ ONE SELECTOR, THREE ITEMS. NSMenuItem needs an Objective-C target and
+    // a SwiftUI view is not one, so which scan an item runs travels in its tag
+    // rather than in three near-identical methods.
+    @objc func scanNow(_ sender: Any?) {
+        let kind = (sender as? NSMenuItem).flatMap { ScanKind.allCases.indices.contains($0.tag) ? ScanKind.allCases[$0.tag] : nil }
+        model.scan(kind ?? .installations)
+    }
 
     @objc func openHelp(_ sender: Any?) {
         if let url = URL(string: "https://github.com/templetongroup/templeton-protect") {
@@ -95,7 +102,13 @@ MainActor.assumeIsolated {
 
     let scanItem = NSMenuItem()
     let scanMenu = NSMenu(title: "Scan")
-    scanMenu.addItem(withTitle: "Scan Now", action: #selector(AppDelegate.scanNow(_:)), keyEquivalent: "r")
+    // Command-1, 2, 3, in the order they appear on the opening screen.
+    for (i, kind) in ScanKind.allCases.enumerated() {
+        let item = NSMenuItem(title: kind.title, action: #selector(AppDelegate.scanNow(_:)),
+                              keyEquivalent: "\(i + 1)")
+        item.tag = i
+        scanMenu.addItem(item)
+    }
     scanItem.submenu = scanMenu
     menu.addItem(scanItem)
 

@@ -7,6 +7,9 @@ wrong and cost real time.
 
 | What | Where |
 |---|---|
+| Hardware and posture scan (Swift only) | `mac/Sources/ProtectCore/Machine.swift` |
+| Codebase scan (Swift only) | `mac/Sources/ProtectCore/Code.swift` |
+| Remediation steps and key-rotation pages | `mac/Sources/ProtectCore/NextSteps.swift` |
 | Scan rules (Swift, what the app runs) | `mac/Sources/ProtectCore/` |
 | The app | `mac/Sources/Protect/` |
 | Scan rules (TypeScript, the CLI and the tests) | `src/` |
@@ -19,6 +22,129 @@ The Swift and TypeScript rule sets are the same logic written twice. There is no
 Swift test target — this machine has the Command Line Tools, not full Xcode, so
 XCTest is absent. `mac/Sources/Probe` is the scratch executable for measuring
 Swift behaviour against the real filesystem.
+
+## The three scans
+
+Added 2026-08-31. The opening screen is three cards; each runs its own scan and
+the findings collect into **one list**, because somebody with a key in a
+transcript, a firewall that is off and an `.env` committed to a repository has
+one problem — this Mac — not three reports to reconcile.
+
+- ⚠️ **`ScanResult.filesRead` is not always files.** The hardware scan reads
+  fifteen settings and no files at all. Both exports said "Checked 15 files
+  across This Mac" until this was caught; they say "files and settings" now, and
+  the scanning screen's counter says "checks run" when `model.active == .machine`.
+- ⚠️ **A finding's identity is `layer/rule/where`, not the path.** Three scans
+  share one list and the path was doing double duty as the SwiftUI list id and
+  the key for fix outcomes. Two findings about the same file — a key in it and
+  its being readable — collapsed into one row, and a fix applied to either
+  reported its result on both.
+- ⚠️ **The open panel is what authorizes a fix outside the AI homes.**
+  `insideScannedTree` refused every fix the code scan offers until it learned
+  about the chosen folder; the folder is passed in as `extraRoots` rather than
+  the guard being widened.
+
+### The hardware scan
+
+Every check is a query a normal account can answer — nothing prompts for a
+password, because a scanner that opens an admin prompt on launch is one nobody
+runs twice.
+
+- ⚠️ **Read the pipe before waiting on the process.** A pipe holds ~64 KB;
+  `netstat -an` on a working Mac is past that, so `waitUntilExit()` first
+  deadlocks on exactly the machines this app is for. Every subprocess also has a
+  deadline, and no subprocess is ever `osascript`.
+- ⚠️ **Not `launchctl print-disabled`.** It reports the *override*, so a service
+  nobody has ever touched reads back "enabled" whether it is running or not —
+  every early version said SSH was on for every Mac. `launchctl print
+  system/<label>` exiting 0 is the real answer.
+- ⚠️ **`system_profiler` output is copied by allowlist, never filtered.** It
+  prints the serial number, the hardware UUID and the provisioning UDID next to
+  the four fields we want. A denylist leaks the day Apple adds a field, and this
+  app puts its screen on a projector and writes PDFs people email.
+- ⚠️ **Never name a service from a port number alone.** Port 5000 was reported as
+  "a local model server"; it is AirPlay Receiver, which macOS turns on itself.
+  Ports 3000 and 8080 are whatever somebody started this morning. `lsof` names
+  the process (it only sees this account's, which is why `netstat` still decides
+  the list), and the port table holds four unambiguous entries.
+- ⚠️ **Do not report a port that already has its own finding.** 22, 5900 and 3283
+  are Remote Login, Screen Sharing and Remote Management, each with its own card
+  and its own button. Listing them again under "programs listening" turns one
+  problem into two and makes the list look padded.
+- ⚠️ **`NSWorkspace.open` returns true for any `x-apple.systempreferences:` URL.**
+  System Settings claims the scheme, so it launches whether or not the pane
+  identifier means anything — which means the obvious "try the modern id, fall
+  back to the legacy one" design silently drops people on the front page and
+  reports success. The pane is chosen by macOS version instead. Found by opening
+  it and looking, not by reading the return value.
+
+### The code scan
+
+Points at a folder chosen in an `NSOpenPanel`. Everything it reports is anchored
+to a byte pattern, a file mode or an answer from git — never to a judgement.
+
+⚠️ **Every one of these was a false positive on the first run, and each is the
+kind that makes somebody close the app:**
+
+- A repo's own test fixtures reported as a critical credential leak. Test files
+  are reported *quietly* now, not suppressed — a real key pasted into `tests/` is
+  committed like any other, and `tests/` is where nobody looks.
+- `.env.example` reported as a gitignore mistake. It is *meant* to be committed.
+  The only thing wrong with a template is a real key in it, and that one is
+  critical because a template is committed on purpose.
+- `\`Could not delete it: ${err}\`` reported as SQL injection. Matching
+  `select|insert|update|delete` plus an interpolation finds every template string
+  in the codebase containing a verb; the rule needs the *statement* — `SELECT …
+  FROM`, `DELETE FROM`.
+- `--insecure` and `exec(Sync)` — matched inside this scanner's own rule list.
+  `--insecure` now needs `curl` or `wget` on the same line; the bare `exec(` arm
+  is gone.
+- `eval(str)` inside a minified bundle in `.next-verify/`. Adding one more name
+  to the skip list only closes the case somebody already hit; generated files are
+  detected **by shape** — bytes per line over 400 — and skipped for the pattern
+  rules. Keys are still read out of them, because a credential in a bundle has
+  shipped to every browser that loaded it.
+
+## Next steps, and the yellow line that pointed nowhere
+
+Every finding used to end with `Next: How to rotate a leaked key properly` — the
+title of a folder under `skills/`, in plain yellow text, not a button, naming a
+document that is not bundled in the app. Tony, in the shipped app: *"they point
+nowhere and are meaningless."*
+
+- ⚠️ **A label that names help nobody can reach is worse than no label**, because
+  it looks like help. The steps live in `NextSteps.swift` now: a title, ordered
+  plain-language steps, and the vendor's own key page as a button that opens it.
+- ⚠️ **Only vendors whose page is known get a link.** A plausible-looking URL that
+  404s is the same failure one step later.
+- ⚠️ **A disclosure's content goes directly under its own toggle.** "What was
+  found" rendered at the bottom of the card, below the next-steps section, so
+  opening it made text appear under a different heading. Tony: *"when i click the
+  What was found text, it opens below the Yellow text. hard to follow."*
+
+## The fix for a key in a transcript
+
+⚠️ **Remove the key, not the transcript.** The app shipped signed and notarized
+offering `Delete this transcript` as the only option. Tony: *"if it surfaces
+something like an openai key in a transcript, how can we delete the entire
+session from their folders? that would be incredibly destructive."*
+
+`redactKeys` in `NextSteps.swift` replaces each key-shaped value with
+`[<vendor> key removed by Templeton Protect]` and leaves the rest byte for byte.
+This is the Swift half of the change the TypeScript engine took the same day —
+**the two must not drift again.**
+
+- ⚠️ **Write beside it and rename.** Truncating the real file and refilling it
+  leaves somebody's conversation half destroyed if the write is interrupted,
+  which is the exact outcome the fix exists to avoid.
+- ⚠️ **Confirm it took.** Re-read the file and re-run `findKeys`. Telling somebody
+  a key is gone while it is still on disk is worse than not offering the fix.
+- Placeholders survive, unicode survives, the line count is unchanged, and a
+  target outside the scanned tree is still refused. Measured, not assumed.
+- The narrower `keyShapesForRedaction` list is deliberate: a
+  `-----BEGIN PRIVATE KEY-----` match is one line of a multi-line block, so
+  replacing it leaves the body behind and produces a file that lies about being
+  clean.
 
 ## Design
 
@@ -128,10 +254,24 @@ full window and `contentLayoutRect` is 32pt shorter.
 Look at the running app. Tests did not catch a single one of the problems above.
 
     mac/build.sh
-    PROTECT_AUTOSCAN=1 "mac/dist/Templeton Protect.app/Contents/MacOS/Protect"
+    PROTECT_AUTOSCAN=installations "mac/dist/Templeton Protect.app/Contents/MacOS/Protect"
 
-`PROTECT_AUTOSCAN` runs a real scan on launch so a screenshot can reach the
-results screen. `PROTECT_GEOM` prints the window and content-view frames.
+`PROTECT_AUTOSCAN=machine|installations|code` runs a real scan on launch so a
+screenshot can reach the results screen (`=1` still means installations).
+`PROTECT_EXPAND=1` opens both disclosures on every finding card — the steps only
+exist once somebody clicks, and a screenshot cannot click; the ordering bug above
+was only visible with both open. `PROTECT_GEOM` prints the window and
+content-view frames.
+
+`mac/Sources/Probe` runs all three scans against the real filesystem and checks
+that no key survives `redact()` into an export. Both sets of code-scan false
+positives above were caught by running it and reading every line — not by
+reasoning about the regular expressions.
+
+    cd mac && swift build --product Probe && .build/debug/Probe ~/Projects/<repo>
+
+⚠️ **The window's owner name is "Templeton Protect", not "Protect".** A screenshot
+helper matching on the executable name finds nothing and reports "no window".
 
 Screenshot the window without taking over the screen: get the window id from
 `CGWindowListCopyWindowInfo` (no permission prompt) and `screencapture -l<id> -o -x`.

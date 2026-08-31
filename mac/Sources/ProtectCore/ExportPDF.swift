@@ -84,8 +84,8 @@ public enum PDFReport {
     }
 
     private static func machineLine(_ r: ScanResult) -> String {
-        let tools = r.toolsFound.isEmpty ? "no AI installations" : r.toolsFound.joined(separator: ", ")
-        return "\(r.filesRead.formatted()) files checked across \(tools)"
+        let tools = r.toolsFound.isEmpty ? "nothing" : r.toolsFound.joined(separator: ", ")
+        return "\(r.filesRead.formatted()) files and settings checked across \(tools)"
     }
 
     // ── text ──────────────────────────────────────────────────────────────

@@ -7,6 +7,19 @@ files keep their own licence and their own attribution, and that distinction has
 to survive into any build or package that includes them. Apache 2.0 permits this
 use and requires the notice — it does not permit quietly relicensing them.
 
+⚠️ NOTHING IN THE APP LINKS HERE ANY MORE, as of 2026-08-31. Findings used to
+end with a line naming one of these folders. In the shipped app that line was
+plain yellow text that could not be clicked, pointing at documents that are not
+bundled — and which, opened, turn out to be enterprise runbooks about Active
+Directory and HashiCorp Vault rather than anything a person with a key in a chat
+log can use. Tony, on seeing it: "they point nowhere and are meaningless."
+
+The remediation steps now live in `mac/Sources/ProtectCore/NextSteps.swift`,
+written for the reader the app actually has, with the vendor's own key page as a
+button. These files stayed because they are decent background reading for
+somebody working on the rules — but by the standard set in the next paragraph
+they are now ballast, and whether they stay is Tony's call, not an agent's.
+
 ⚠️ FOUR OF 818, DELIBERATELY. The upstream library covers the whole security
 domain, including offensive techniques (extracting credentials from memory,
 abusing DPAPI) that have no place in a defensive scanner. Only the remediation

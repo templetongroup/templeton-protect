@@ -74,7 +74,10 @@ struct ScanningView: View {
             .frame(height: 40)
 
             HStack(spacing: Space.xxl) {
-                counter("\(model.filesRead.formatted())", "files read")
+                // ⚠️ THE HARDWARE SCAN READS NO FILES. Fifteen settings reported
+                // as "files read" is a number that describes a different scan.
+                counter("\(model.filesRead.formatted())",
+                        model.active == .machine ? "checks run" : "files read")
                 counter("\(model.foundSoFar)", "found so far",
                         tint: model.foundSoFar > 0 ? Ink.critical : Ink.primary)
                 counter("\(model.elapsed)s", "elapsed")

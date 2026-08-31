@@ -19,29 +19,34 @@ overwrite its work.
 
 ### What this is
 
-A Mac app that scans the AI assistants installed on a Mac for credentials left
-in conversation logs, and for files other accounts can read. Read-only until you
-ask it to fix something. It is sold three ways: bundled with paid AiOS plans, as
-a subscription, and as an open-source download. `docs/PRODUCT.md` holds the
-product shape and the decisions behind it.
+A Mac app that runs three scans and collects the findings into one list: the
+Mac's own security posture, the AI assistants installed on it, and a codebase you
+point it at. Read-only until you ask it to fix something. It is sold three ways:
+bundled with paid AiOS plans, as a subscription, and as an open-source download.
+`docs/PRODUCT.md` holds the product shape and the decisions behind it.
 
-The tagline is "Scan your AI, then scan your code" and **only the first half
-exists**. The code half is the part that reaches people who run neither Claude
-nor Codex.
+The tagline is "Scan your Mac, your assistants, and your code" and as of
+2026-08-31 all three exist **in the Swift engine only**.
 
 ### Where things are
 
 | What | Where |
 |---|---|
 | Scan rules (Swift — what the app runs) | `mac/Sources/ProtectCore/` |
+| Hardware and posture scan | `mac/Sources/ProtectCore/Machine.swift` |
+| Codebase scan | `mac/Sources/ProtectCore/Code.swift` |
+| Remediation steps and key-rotation pages | `mac/Sources/ProtectCore/NextSteps.swift` |
 | The app | `mac/Sources/Protect/` |
 | Scan rules (TypeScript — the CLI and the tests) | `src/` |
 | Local build | `mac/build.sh` |
-| Signed, notarised release | `mac/release.sh` |
-| Tests | `npm test` |
+| Signed, notarized release | `mac/release.sh` |
+| Tests | `npm test` (installations rules only) |
+| Harness for the unpinned Swift rules | `mac/Sources/Probe` |
 
-The Swift and TypeScript rule sets are the same logic written twice; the
-TypeScript suite is what pins the behaviour.
+⚠️ **THE TWO RULE SETS NO LONGER MATCH.** They were the same logic written twice
+and the TypeScript suite pinned the behavior. As of 2026-08-31 the hardware and
+code scans exist in Swift alone, so `npm test` pins the installations rules and
+nothing else. See `HANDOFF.md`; closing this is the largest open item.
 
 ### How to work
 

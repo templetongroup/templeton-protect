@@ -7,12 +7,25 @@ enum Phase { case idle, scanning, done }
 
 @MainActor final class Model: ObservableObject {
     @Published var phase: Phase = .idle
-    @Published var result: ScanResult?
+    /**
+     ⚠️ ONE RESULTS SCREEN FOR THREE SCANS, AND THE RESULTS ACCUMULATE. Somebody
+     with a key in a transcript, a firewall that is off and an `.env` committed to
+     a repository has one problem — this Mac — and making them run three scans and
+     read three separate reports is asking them to do the joining up. Running a
+     second scan adds to the list; it does not replace it.
+     */
+    @Published var results: [ScanKind: ScanResult] = [:]
+    /// Which scan is running, or the one whose results are on screen.
+    @Published var active: ScanKind = .installations
     @Published var elapsed = 0
     @Published var outcomes: [String: FixOutcome] = [:]
     @Published var armed: Set<String> = []
     /// What is on this Mac, found without scanning. Populated on appear.
     @Published var installed: [Installed] = []
+    /// What this Mac is. Read once, on appear, for the hardware card.
+    @Published var spec: MachineSpec?
+    /// The folder the code scan points at. Nil until somebody chooses one.
+    @Published var codeTarget: CodeTarget?
     @Published var stages: [Stage] = []
     @Published var currentFile = ""
     @Published var currentFolder = ""
@@ -23,6 +36,17 @@ enum Phase { case idle, scanning, done }
     @Published var exportError: String?
     private var timer: Timer?
 
+    /// Every finding from every scan that has been run, worst first.
+    var combined: ScanResult? {
+        guard !results.isEmpty else { return nil }
+        let all = results.values.flatMap(\.findings)
+        return ScanResult(findings: sortedForDisplay(all),
+                          toolsFound: results.values.flatMap(\.toolsFound),
+                          filesRead: results.values.reduce(0) { $0 + $1.filesRead })
+    }
+
+    func has(_ kind: ScanKind) -> Bool { results[kind] != nil }
+
     func detect() {
         guard installed.isEmpty else { return }
         // ⚠️ OFF THE MAIN THREAD. Measured at 283ms on a working machine — not
@@ -31,6 +55,47 @@ enum Phase { case idle, scanning, done }
             let found = detectInstallations()
             await MainActor.run { self.installed = found }
         }
+        // ⚠️ ALSO OFF IT, AND FOR THE SAME REASON. describeMachine shells out to
+        // system_profiler, which is 155ms on this Mac and unbounded on one that
+        // is busy. The card says "Reading…" until it lands rather than holding
+        // the launch.
+        Task.detached(priority: .userInitiated) {
+            let spec = describeMachine()
+            await MainActor.run { self.spec = spec }
+        }
+        // A folder chosen in an earlier session, if there was one.
+        if let remembered = UserDefaults.standard.string(forKey: codeFolderKey),
+           FileManager.default.fileExists(atPath: remembered) {
+            Task.detached(priority: .userInitiated) {
+                let t = describeCodeTarget(remembered)
+                await MainActor.run { self.codeTarget = t }
+            }
+        }
+    }
+
+    /**
+     ⚠️ THE OPEN PANEL IS THE PERMISSION, exactly as the save panel is for
+     exports. This app reads a folder full of somebody's source code; the one
+     honest way to decide which folder that is, is to have them point at it. It
+     is also what authorizes a fix inside that tree — see `insideScannedTree`.
+     */
+    func chooseCodeFolder(thenScan: Bool = true) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose a folder to scan"
+        panel.prompt = "Choose"
+        panel.message = "Pick the top of a project. Everything inside it is read, and nothing is changed."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        UserDefaults.standard.set(url.path, forKey: codeFolderKey)
+        Task.detached(priority: .userInitiated) {
+            let t = describeCodeTarget(url.path)
+            await MainActor.run {
+                self.codeTarget = t
+                if thenScan { self.scan(.code) }
+            }
+        }
     }
 
     /// ⚠️ NOT AN ACTOR-ISOLATED FLAG. The scan runs on a detached task and polls
@@ -38,21 +103,38 @@ enum Phase { case idle, scanning, done }
     /// would cost more than the scan.
     private let cancelled = Cancellation()
 
-    func scan() {
+    func scan(_ kind: ScanKind) {
         guard phase != .scanning else { return }
+        // The code scan cannot start without somewhere to point it.
+        if kind == .code, codeTarget == nil { chooseCodeFolder(); return }
+
+        active = kind
         phase = .scanning
         elapsed = 0
-        outcomes = [:]
         armed = []
         filesRead = 0
         foundSoFar = 0
         currentFile = ""
         currentFolder = ""
         cancelled.reset()
-        stages = installed.map { Stage(tool: $0.tool, dir: $0.dir, state: .waiting) }
+
+        switch kind {
+        case .machine:
+            stages = machineStages.map { Stage(tool: $0, dir: $0, state: .waiting) }
+            stageHeadline = "Reading this Mac…"
+        case .installations:
+            stages = installed.map { Stage(tool: $0.tool, dir: $0.dir, state: .waiting) }
+            stageHeadline = "Reading your AI installations…"
+        case .code:
+            let name = codeTarget.map { ($0.path as NSString).lastPathComponent } ?? "your code"
+            stages = [Stage(tool: name, dir: name, state: .waiting)]
+            stageHeadline = "Reading \(name)…"
+        }
+
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.elapsed += 1 }
         }
+        let folder = codeTarget?.path
         Task.detached(priority: .userInitiated) { [cancelled] in
             // ⚠️ THROTTLED, AND ON PURPOSE. The callback fires once per file
             // read — thousands of times — and publishing every one of them
@@ -60,18 +142,26 @@ enum Phase { case idle, scanning, done }
             // of the very CPU it is asking for. Twelve a second is past what
             // anyone can read anyway.
             let throttle = Throttle(interval: 1.0 / 12.0)
-            let r = scanAiInstallations(
-                isCancelled: { cancelled.isSet },
-                progress: { p in
-                    let finished = p.finishedTool
-                    if finished == nil && !throttle.ready() { return }
-                    Task { @MainActor [weak self] in self?.absorb(p) }
-                })
+            let report: (ScanProgress) -> Void = { p in
+                let finished = p.finishedTool
+                if finished == nil && !throttle.ready() { return }
+                Task { @MainActor [weak self] in self?.absorb(p) }
+            }
+            let r: ScanResult
+            switch kind {
+            case .machine:
+                r = scanMachine(isCancelled: { cancelled.isSet }, progress: report)
+            case .installations:
+                r = scanAiInstallations(isCancelled: { cancelled.isSet }, progress: report)
+            case .code:
+                r = folder.map { scanCode(at: $0, isCancelled: { cancelled.isSet }, progress: report) }
+                    ?? ScanResult(findings: [], toolsFound: [], filesRead: 0)
+            }
             await MainActor.run {
                 self.timer?.invalidate()
                 // A stopped scan keeps what it had found by then; throwing it
                 // away would make Stop feel like a punishment.
-                self.result = r
+                self.results[kind] = r
                 self.phase = .done
             }
         }
@@ -120,7 +210,7 @@ enum Phase { case idle, scanning, done }
     /// paths straight into Downloads without asking is the sort of thing this app
     /// exists to warn people about; the user picks the destination, every time.
     func export(_ format: ExportFormat) {
-        guard let result else { return }
+        guard let result = combined else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = exportFilename(format)
         panel.canCreateDirectories = true
@@ -143,10 +233,26 @@ enum Phase { case idle, scanning, done }
 
     func apply(_ finding: Finding) {
         guard let fix = finding.fix else { return }
+        // ⚠️ THE CHOSEN FOLDER TRAVELS WITH THE FIX. Without it every fix the
+        // code scan offers is refused by insideScannedTree, which only knows
+        // about the AI home directories — a button that always fails.
+        let extra = codeTarget.map { [$0.path] } ?? []
         Task.detached(priority: .userInitiated) {
-            let outcome = applyFix(fix)
-            await MainActor.run { self.outcomes[finding.where_] = outcome }
+            let outcome = applyFix(fix, extraRoots: extra)
+            await MainActor.run { self.outcomes[finding.identity] = outcome }
         }
+    }
+}
+
+private let codeFolderKey = "codeFolder"
+
+/// Worst first, and stable inside a severity so the list does not reshuffle
+/// when a second scan adds to it.
+func sortedForDisplay(_ findings: [Finding]) -> [Finding] {
+    findings.sorted { a, b in
+        if a.severity != b.severity { return a.severity.rank < b.severity.rank }
+        if a.layer != b.layer { return a.layer < b.layer }
+        return a.where_ < b.where_
     }
 }
 
@@ -202,7 +308,12 @@ struct ContentView: View {
             // Lets a screenshot reach the results screen without a click. The
             // app's own layout is the thing being checked, so it has to be the
             // real scan and the real findings, not a fixture.
-            if ProcessInfo.processInfo.environment["PROTECT_AUTOSCAN"] != nil { model.scan() }
+            //
+            // PROTECT_AUTOSCAN=machine|installations|code, or =1 for the
+            // installations scan, which is what it meant when there was one.
+            if let want = ProcessInfo.processInfo.environment["PROTECT_AUTOSCAN"] {
+                model.scan(ScanKind(rawValue: want) ?? .installations)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -224,7 +335,8 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     compactHeader
-                    if let r = model.result { summary(r); findings(r) }
+                    runStrip
+                    if let r = model.combined { summary(r); findings(r) }
                 }
                 .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity)
@@ -275,172 +387,164 @@ struct ContentView: View {
     // ── idle ──────────────────────────────────────────────────────────
     //
     // ⚠️ THE FIRST VERSION WAS A TITLE, A CIRCLE AND A PARAGRAPH IN A VOID.
-    // Centred, symmetrical, and saying nothing the product page does not already
-    // say — a scanner whose opening screen has learned nothing about your machine
-    // has no reason to be an app. This one reads the installations before you
-    // press anything, so the first thing on screen is your own Mac.
+    // Centered, symmetrical, and saying nothing the product page does not
+    // already say — a scanner whose opening screen has learned nothing about
+    // your machine has no reason to be an app. The second version read the AI
+    // installations before you pressed anything. This one does that for all
+    // three scans: what the Mac is, what is installed on it, and which folder
+    // the code scan is pointed at, all before a click.
     private var hero: some View {
         VStack(alignment: .leading, spacing: Space.xxl) {
-            HStack(alignment: .top, spacing: Space.huge) {
-                pitch
-                machine
-            }
-            checks
+            pitch
+            cards
         }
         .padding(.vertical, Space.xl)
     }
 
-    /// ⚠️ EVERY CLAIM HERE IS ONE THE ENGINE ACTUALLY MAKES. It is tempting to
-    /// fill the bottom of a sparse screen with feature copy, and a security tool
-    /// that overstates what it checks is worse than one that says nothing.
-    /// These three are the rules in Scan.swift, in the user's words.
-    private var checks: some View {
-        // ⚠️ EQUAL HEIGHTS, and it takes both halves of this. maxHeight makes each
-        // card fill whatever the row is; fixedSize makes the row exactly as tall
-        // as its tallest card. With only the first, the row collapses; with only
-        // the second, the cards keep their own ragged heights, which is what they
-        // did — three panels of three different sizes.
+    private var pitch: some View {
+        VStack(alignment: .leading, spacing: Space.md) {
+            Text("TEMPLETON PROTECT")
+                .font(.system(size: FontSize.caption, weight: .semibold))
+                .tracking(1.6)
+                .foregroundStyle(Ink.accent)
+            Text("Scan your Mac, your assistants,\nand your code.")
+                .font(.system(size: FontSize.display, weight: .semibold, design: .rounded))
+                .foregroundStyle(Ink.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Three scans, run in any order, and the findings collect into one list. All of it happens on this Mac, all of it is read-only, and anything shown to you has the secret itself blanked out first.")
+                .font(.system(size: FontSize.body))
+                .foregroundStyle(Ink.secondary())
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 620, alignment: .leading)
+        }
+    }
+
+    /// ⚠️ EQUAL HEIGHTS, and it takes both halves of this. maxHeight makes each
+    /// card fill whatever the row is; fixedSize makes the row exactly as tall as
+    /// its tallest card. With only the first, the row collapses; with only the
+    /// second, the cards keep their own ragged heights — three panels of three
+    /// different sizes, which is what the first attempt looked like.
+    private var cards: some View {
         HStack(alignment: .top, spacing: Space.md) {
-            check("key.horizontal.fill", "Keys in your chat history",
-                  "Anthropic, OpenAI, GitHub, Google, Slack and GitLab keys, left behind in conversation logs.")
-            check("lock.open.fill", "Files other accounts can open",
-                  "The file and every folder above it. A loose file inside a locked-down folder is not a problem, and is not reported as one.")
-            check("wifi.slash", "Nothing leaves this Mac",
-                  "The scan is local, and anything it shows you has the secret itself blanked out first.")
+            ForEach(ScanKind.allCases, id: \.self) { scanCard($0) }
         }
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func check(_ icon: String, _ title: String, _ body: String) -> some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            Image(systemName: icon)
-                .font(.system(size: FontSize.lead))
-                .foregroundStyle(Ink.accent)
-            Text(title)
-                .font(.system(size: FontSize.small, weight: .semibold))
+    private func scanCard(_ kind: ScanKind) -> some View {
+        VStack(alignment: .leading, spacing: Space.md) {
+            HStack(spacing: Space.sm) {
+                Image(systemName: kind.icon)
+                    .font(.system(size: FontSize.lead))
+                    .foregroundStyle(Ink.accent)
+                Spacer(minLength: 0)
+                // ⚠️ A SCAN THAT HAS ALREADY RUN SAYS SO, ON ITS OWN CARD. Going
+                // back to this screen after one scan and finding it unchanged
+                // makes it look as though nothing happened.
+                if let r = model.results[kind] {
+                    Text(r.findings.isEmpty ? "clear" : "\(r.findings.count) found")
+                        .font(.system(size: FontSize.caption, weight: .medium))
+                        .foregroundStyle(r.findings.isEmpty ? Ink.good : Ink.critical)
+                }
+            }
+
+            Text(kind.title)
+                .font(.system(size: FontSize.lead, weight: .semibold, design: .rounded))
                 .foregroundStyle(Ink.primary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(body)
+
+            // What is already known about this Mac, before anything is pressed.
+            //
+            // ⚠️ TWO SEPARATE LINES, NOT ONE STRING WITH A NEWLINE IN IT. As one
+            // Text with lineLimit(2), a long first line wrapped and consumed the
+            // budget, so the second fact — the file count, the amount of free
+            // disk — simply vanished behind an ellipsis on every card.
+            VStack(alignment: .leading, spacing: 2) {
+                let (first, second) = preview(kind)
+                Text(first).lineLimit(1).truncationMode(.tail)
+                Text(second).lineLimit(1).truncationMode(.middle)
+            }
+            .font(.system(size: FontSize.caption, design: .monospaced))
+            .foregroundStyle(Ink.secondary(Dim.strong))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(kind.blurb)
                 .font(.system(size: FontSize.caption))
                 .foregroundStyle(Ink.secondary(Dim.faint))
                 .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: Space.sm)
+
+            Button { model.scan(kind) } label: {
+                Text(buttonLabel(kind))
+                    .font(.system(size: FontSize.small, weight: .bold, design: .rounded))
+                    .foregroundStyle(Palette.navy)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.md)
+                    .primaryAction()
+            }
+            .buttonStyle(.plain)
+
+            // ⚠️ THE FOLDER HAS TO BE CHANGEABLE WITHOUT SCANNING IT FIRST.
+            // Without this the only way to pick a different project is to run a
+            // scan of the wrong one and come back.
+            if kind == .code, model.codeTarget != nil {
+                Button { model.chooseCodeFolder(thenScan: false) } label: {
+                    // ⚠️ NOT .underline(). It arrived in macOS 13 and this app
+                    // still runs on 12, where the modifier does not exist at all.
+                    Text("Choose a different folder…")
+                        .font(.system(size: FontSize.caption))
+                        .foregroundStyle(Ink.accent.opacity(Dim.strong))
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+            }
         }
         .padding(Space.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentSurface(radius: Radius.card)
     }
 
-    private var pitch: some View {
-        VStack(alignment: .leading, spacing: Space.xl) {
-            VStack(alignment: .leading, spacing: Space.md) {
-                Text("TEMPLETON PROTECT")
-                    .font(.system(size: FontSize.caption, weight: .semibold))
-                    .tracking(1.6)
-                    .foregroundStyle(Ink.accent)
-                Text("Scan your AI,\nthen scan your code.")
-                    .font(.system(size: FontSize.display, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Ink.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Credentials get pasted into chats and left in conversation logs. This finds them, and finds the files another account on this Mac can read.")
-                    .font(.system(size: FontSize.body))
-                    .foregroundStyle(Ink.secondary())
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 420, alignment: .leading)
-            }
-
-            Button(action: model.scan) {
-                HStack(spacing: Space.sm) {
-                    Image(systemName: "shield.lefthalf.filled")
-                    Text(model.phase == .scanning ? "Scanning" : "Scan this Mac")
-                }
-                .font(.system(size: FontSize.lead, weight: .bold, design: .rounded))
-                .foregroundStyle(Palette.navy)
-                .padding(.horizontal, Space.xxl).padding(.vertical, Space.lg)
-                .primaryAction()
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("r", modifiers: .command)
-
-            Text("Read-only. Nothing is changed unless you ask for it.")
-                .font(.system(size: FontSize.caption))
-                .foregroundStyle(Ink.secondary(Dim.faint))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private func buttonLabel(_ kind: ScanKind) -> String {
+        if model.has(kind) { return "Scan again" }
+        if kind == .code && model.codeTarget == nil { return "Choose a folder…" }
+        return "Scan"
     }
 
-    private var machine: some View {
-        VStack(alignment: .leading, spacing: Space.md) {
-            HStack {
-                Text("ON THIS MAC")
-                    .font(.system(size: FontSize.caption, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(Ink.secondary(Dim.faint))
-                Spacer()
-                // ⚠️ A BARE COLUMN OF NUMBERS MEANS NOTHING. "2,289" next to
-                // Claude Code could be days, sessions, megabytes. The column has
-                // a name now, and the row below says what the scan will do with
-                // them.
-                Text("FILES TO CHECK")
-                    .font(.system(size: FontSize.caption, weight: .semibold)).tracking(1.4)
-                    .foregroundStyle(Ink.secondary(Dim.faint))
+    /// ⚠️ EVERY LINE HERE IS SOMETHING THE APP HAS ACTUALLY READ. It is tempting
+    /// to fill three cards with feature copy, and a security tool that overstates
+    /// what it checks is worse than one that says nothing at all.
+    private func preview(_ kind: ScanKind) -> (String, String) {
+        switch kind {
+        case .machine:
+            guard let spec = model.spec else { return ("Reading this Mac…", " ") }
+            return ("\(spec.model) · \(spec.chip)",
+                    "macOS \(spec.systemShort) · \(spec.memory) · \(spec.free)")
+        case .installations:
+            if model.installed.isEmpty { return ("Looking for AI assistants…", " ") }
+            let tools = model.installed.map(\.tool)
+            let named = tools.prefix(3).joined(separator: ", ")
+                + (tools.count > 3 ? " +\(tools.count - 3)" : "")
+            let total = model.installed.reduce(0) { $0 + $1.files }
+            let capped = model.installed.contains { $0.atLeast }
+            return (named, "\(total.formatted())\(capped ? "+" : "") files to check")
+        case .code:
+            guard let t = model.codeTarget else {
+                return ("No folder chosen yet.", "Pick the top of a project.")
             }
-            .padding(.horizontal, Space.lg).padding(.top, Space.lg)
-
-            if model.installed.isEmpty {
-                Text("Looking…")
-                    .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary(Dim.faint))
-                    .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(model.installed) { item in
-                        HStack(spacing: Space.md) {
-                            Circle().fill(Ink.accent).frame(width: 6, height: 6)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(item.tool)
-                                    .font(.system(size: FontSize.small, weight: .medium))
-                                    .foregroundStyle(Ink.primary)
-                                Text(item.dir)
-                                    .font(.system(size: FontSize.caption, design: .monospaced))
-                                    .foregroundStyle(Ink.secondary(Dim.faint))
-                            }
-                            Spacer(minLength: Space.lg)
-                            // ⚠️ TABULAR DIGITS. Counts in a stacked column that
-                            // do not share a digit width read as a ragged mess.
-                            Text(item.atLeast ? "\(item.files)+" : "\(item.files)")
-                                .font(.system(size: FontSize.caption, design: .monospaced))
-                                .monospacedDigit()
-                                .foregroundStyle(Ink.secondary())
-                        }
-                        .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
-                        if item.id != model.installed.last?.id {
-                            Rectangle().fill(Ink.panelEdge).frame(height: 1)
-                                .padding(.leading, Space.lg + 6 + Space.md)
-                        }
-                    }
-                }
-
-                Text(installedFooter)
-                    .font(.system(size: FontSize.caption))
-                    .foregroundStyle(Ink.secondary(Dim.faint))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Space.lg)
-                    .padding(.top, Space.sm).padding(.bottom, Space.lg)
-            }
+            return (t.display,
+                    "\(t.atLeast ? "\(t.files)+" : "\(t.files)") files\(t.isRepository ? " · git repository" : "")")
         }
-        .frame(width: 320)
-        .contentSurface(radius: Radius.panel)
-    }
-
-    private var installedFooter: String {
-        let total = model.installed.reduce(0) { $0 + $1.files }
-        let capped = model.installed.contains { $0.atLeast }
-        return "About \(total.formatted())\(capped ? "+" : "") files in these folders. The scan reads the ones that can hold a key — logs, configs and transcripts — and skips the rest."
     }
 
     // ── header once scanning or done ──────────────────────────────────
     private var compactHeader: some View {
         HStack(spacing: Space.lg) {
-            Button(action: model.scan) {
-                Text(model.phase == .scanning ? "…" : "Re-scan")
+            // ⚠️ BACK, NOT RE-SCAN. With three scans there is no single thing
+            // to repeat, and the button that used to re-run the only scan now
+            // has to return somewhere a choice can be made.
+            Button { model.phase = .idle } label: {
+                Text(model.phase == .scanning ? "…" : "Back")
                     .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
                     .foregroundStyle(Ink.primary)
                     .frame(width: 84, height: 84)
@@ -457,14 +561,15 @@ struct ContentView: View {
                     // still spinner reads as hung; the count says it is working.
                     Text("Reading configuration and conversation logs… \(model.elapsed)s")
                         .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary())
-                } else if let r = model.result {
-                    Text("Checked \(r.filesRead.formatted()) files across \(r.toolsFound.count) installations: \(r.toolsFound.joined(separator: ", "))")
+                } else if let r = model.combined {
+                    Text(ranSummary(r))
                         .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary())
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()
 
-            if model.result != nil {
+            if model.combined != nil {
                 // ⚠️ AN AppKit MENU, NOT SwiftUI's. SwiftUI's Menu painted over
                 // both the champagne background and the navy text, so the only
                 // control on the screen came out as plain white text on the
@@ -509,6 +614,46 @@ struct ContentView: View {
         }
     }
 
+    /// What has run, and a button for what has not.
+    ///
+    /// ⚠️ THE RESULTS SCREEN IS A DEAD END WITHOUT THIS. Somebody who runs the
+    /// hardware scan first and then wants the other two should not have to work
+    /// out that the way back is a button labeled with a different word.
+    private var runStrip: some View {
+        HStack(spacing: Space.sm) {
+            ForEach(ScanKind.allCases, id: \.self) { kind in
+                Button { model.scan(kind) } label: {
+                    HStack(spacing: Space.sm) {
+                        Image(systemName: model.has(kind) ? "checkmark.circle.fill" : kind.icon)
+                            .font(.system(size: FontSize.caption))
+                            .foregroundStyle(model.has(kind) ? Ink.good : Ink.accent)
+                        Text(model.has(kind) ? kind.title : "\(kind.title) — not run yet")
+                            .font(.system(size: FontSize.caption, weight: .medium))
+                            .foregroundStyle(model.has(kind) ? Ink.secondary(Dim.strong) : Ink.primary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                    .background(Capsule().strokeBorder(Ink.panelEdge, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help(model.has(kind) ? "Run this scan again" : kind.blurb)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func ranSummary(_ r: ScanResult) -> String {
+        var parts: [String] = []
+        if model.has(.machine) { parts.append("15 settings on this Mac") }
+        if let installs = model.results[.installations] {
+            parts.append("\(installs.filesRead.formatted()) files across \(installs.toolsFound.count) installations")
+        }
+        if let code = model.results[.code], let t = model.codeTarget {
+            parts.append("\(code.filesRead.formatted()) files in \((t.path as NSString).lastPathComponent)")
+        }
+        return "Checked " + parts.joined(separator: ", ") + "."
+    }
+
     // ── summary ───────────────────────────────────────────────────────
     private func summary(_ r: ScanResult) -> some View {
         HStack(spacing: Space.md) {
@@ -530,6 +675,25 @@ struct ContentView: View {
         .contentSurface(radius: Radius.card)
     }
 
+    /// ⚠️ THE ALL-CLEAR MUST NAME WHAT IT COVERS. "Nothing to worry about" after
+    /// a hardware scan, on a Mac whose transcripts have never been read, is a
+    /// clean bill of health for a check that never ran.
+    private var emptyStateLine: String {
+        let ran = ScanKind.allCases.filter { model.has($0) }
+        let names = ran.map { kind -> String in
+            switch kind {
+            case .machine: return "this Mac's settings"
+            case .installations: return "your AI conversation logs"
+            case .code: return "the folder you chose"
+            }
+        }
+        let checked = names.count == 1 ? names[0]
+            : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+        let missing = ScanKind.allCases.filter { !model.has($0) }
+        return "Nothing found in \(checked)."
+            + (missing.isEmpty ? "" : " The other \(missing.count == 1 ? "scan has" : "scans have") not been run.")
+    }
+
     // ── findings ──────────────────────────────────────────────────────
     @ViewBuilder private func findings(_ r: ScanResult) -> some View {
         if r.findings.isEmpty {
@@ -537,14 +701,14 @@ struct ContentView: View {
                 Text("Nothing to worry about")
                     .font(.system(size: FontSize.title, weight: .semibold, design: .rounded))
                     .foregroundStyle(Ink.primary)
-                Text("No credentials are sitting in your AI conversation logs, and nothing another account could read.")
+                Text(emptyStateLine)
                     .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary())
                     .multilineTextAlignment(.center)
             }
             .padding(Space.xxl).frame(maxWidth: .infinity).contentSurface(radius: Radius.panel)
         } else {
             VStack(spacing: Space.md) {
-                ForEach(r.findings, id: \.where_) { FindingCard(finding: $0, model: model) }
+                ForEach(r.findings, id: \.identity) { FindingCard(finding: $0, model: model) }
             }
         }
     }

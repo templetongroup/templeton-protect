@@ -11,17 +11,31 @@ import Foundation
 
 public enum Severity: String, Codable, CaseIterable {
     case critical, high, medium, low
-    var rank: Int { Severity.allCases.firstIndex(of: self)! }
+    public var rank: Int { Severity.allCases.firstIndex(of: self)! }
 }
 
 public struct FixAction: Codable {
-    public enum Kind: String, Codable { case chmod, deleteFile }
+    /**
+     ⚠️ `openSettings` DOES NOT FIX ANYTHING, AND THAT IS THE POINT. Turning the
+     firewall on or switching off Remote Login needs an administrator, and an app
+     that asks for admin rights so it can flip a system switch on your behalf is
+     asking for more trust than a scanner has any business holding. The rule this
+     project keeps instead is that a finding never leaves somebody with a
+     sentence and no button — so the button opens the exact pane, and the person
+     makes the change.
+     */
+    public enum Kind: String, Codable { case chmod, deleteFile, openSettings, redactInFile }
     public let label: String
     public let describes: String
     public let kind: Kind
     public let target: String
     public let mode: UInt16?
     public let destructive: Bool
+    public init(label: String, describes: String, kind: Kind, target: String,
+                mode: UInt16?, destructive: Bool) {
+        self.label = label; self.describes = describes; self.kind = kind
+        self.target = target; self.mode = mode; self.destructive = destructive
+    }
 }
 
 public struct Finding: Codable {
@@ -38,31 +52,98 @@ public struct Finding: Codable {
     public let fix: FixAction?
     /**
      ⚠️ A FIX BUTTON AND A REMEDY ARE NOT THE SAME AS KNOWING WHAT TO DO NEXT.
-     "Delete this transcript" removes the file; it does not tell somebody how to
-     rotate a key properly, or how to stop it happening again. This points at a
-     vendored playbook that does — see skills/NOTICE for where they come from and
-     why only four of the upstream 818 are here.
+     Removing a key from a transcript changes nothing about whether that key
+     still works; the step that matters happens on somebody else's website. This
+     carries that step — in words, with the page as a button — rather than the
+     name of a document. See NextSteps.swift for why the first version did not.
      */
-    public let guidance: Guidance?
+    public let guidance: NextSteps?
+
+    /**
+     What makes this finding *this* finding.
+
+     ⚠️ NOT THE PATH ALONE. Three scans now share one list, and the path was
+     already doing double duty as the key for the fix outcomes and for the
+     SwiftUI list. Two findings about the same file — a key in it and its being
+     readable by other accounts — would collapse into one row, and applying a fix
+     to either would report its result on both.
+     */
+    public var identity: String { "\(layer)/\(rule)/\(where_)" }
 
     enum CodingKeys: String, CodingKey {
         case rule, layer, severity, title, evidence, remedy, validation, plain, verified, fix, guidance
         case where_ = "where"
     }
+
+    public init(rule: String, layer: String, severity: Severity, title: String,
+                where_: String, evidence: String, remedy: String, validation: String,
+                plain: String, verified: Bool, fix: FixAction?, guidance: NextSteps?) {
+        self.rule = rule; self.layer = layer; self.severity = severity; self.title = title
+        self.where_ = where_; self.evidence = evidence; self.remedy = remedy
+        self.validation = validation; self.plain = plain; self.verified = verified
+        self.fix = fix; self.guidance = guidance
+    }
 }
 
-public struct Guidance: Codable {
-    /// What the reader gets out of it, not the folder name.
-    public let title: String
-    /// Folder under skills/, relative to the repository root.
-    public let skill: String
-    public init(title: String, skill: String) { self.title = title; self.skill = skill }
+/**
+ Which of the three scans a finding came from.
+
+ ⚠️ THE THREE SCANS SHARE ONE FINDINGS LIST, DELIBERATELY. Somebody with a key in
+ a transcript, a firewall that is off and an `.env` committed to a repository has
+ one problem — this Mac — not three separate reports to read in sequence. The
+ layer says where a finding came from so the list can be grouped and filtered;
+ it does not split the assessment into three.
+ */
+public enum ScanKind: String, Codable, CaseIterable, Sendable {
+    case machine, installations, code
+
+    public var layer: String { rawValue == "installations" ? "harness" : rawValue }
+
+    public var title: String {
+        switch self {
+        case .machine: return "Scan your hardware"
+        case .installations: return "Scan your installations"
+        case .code: return "Scan your code"
+        }
+    }
+
+    public var blurb: String {
+        switch self {
+        case .machine:
+            return "What this Mac is, and every setting that makes leaving an agent running on it riskier than it needs to be — encryption, the firewall, what it is sharing, what is listening to the network, and whether it ever sleeps or locks."
+        case .installations:
+            return "Every AI assistant installed here. Reads their conversation logs and configuration for credentials left behind, and for files another account on this Mac can open."
+        case .code:
+            return "A folder you choose. Finds keys committed to the repository, secrets an agent can read, and the code patterns that turn a mistake into a breach."
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .machine: return "desktopcomputer"
+        case .installations: return "bubble.left.and.bubble.right.fill"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+    public static func from(layer: String) -> ScanKind {
+        switch layer {
+        case "machine": return .machine
+        case "code": return .code
+        default: return .installations
+        }
+    }
 }
+
+
 
 public struct ScanResult: Codable {
     public let findings: [Finding]
     public let toolsFound: [String]
     public let filesRead: Int
+    public init(findings: [Finding], toolsFound: [String], filesRead: Int) {
+        self.findings = findings; self.toolsFound = toolsFound; self.filesRead = filesRead
+    }
 }
 
 /// ⚠️ A SCANNER THAT PRINTS THE SECRET IT FOUND HAS COPIED IT SOMEWHERE NEW.

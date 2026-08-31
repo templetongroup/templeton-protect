@@ -1,12 +1,24 @@
 # Templeton Protect
 
-**Scan your AI, then scan your code.**
+**Scan your Mac, your assistants, and your code.**
 
 AI agent installations are a new attack surface that nothing audits. Your agents
 hold API keys, run shell commands, and keep every conversation forever — and a
-repository secret-scanner never looks at any of it.
+repository secret-scanner never looks at any of it. Meanwhile the machine they
+run on is left awake, unlocked and sharing, because that is what it took to let
+an agent finish a long job.
 
-Protect scans the installations first.
+The Mac app runs three scans and collects the findings into one list:
+
+| Scan | What it looks at |
+|---|---|
+| **Your hardware** | FileVault, SIP, Gatekeeper, the firewall, what the Mac is sharing, what is listening to the network, whether it sleeps or locks. |
+| **Your installations** | Every AI assistant installed here — conversation logs and configuration, for keys left behind and files other accounts can read. |
+| **Your code** | A folder you choose — keys committed to the repository, `.env` files git is not ignoring, and the code shapes that turn a mistake into a breach. |
+
+⚠️ **The CLI below is the installations scan only.** The hardware and code scans
+are in the Swift engine that the Mac app runs; the TypeScript engine has not
+caught up. See `HANDOFF.md`.
 
 ```bash
 node --experimental-strip-types src/cli.ts            # human-readable
