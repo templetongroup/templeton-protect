@@ -51,6 +51,10 @@ extension View {
 /// The light the glass refracts. Slow, wide, and never in front of anything.
 struct Aurora: View {
     @State private var drift = false
+    // ⚠️ REDUCE MOTION IS NOT OPTIONAL. A slow drifting background is exactly the
+    // ambient animation that setting exists to stop, and the first version ran it
+    // regardless. A still gradient is a perfectly good background.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -95,6 +99,7 @@ struct Aurora: View {
         }
         .ignoresSafeArea()
         .onAppear {
+            guard !reduceMotion else { return }
             // ⚠️ Slow enough to be atmosphere rather than animation. A background
             // that draws the eye is competing with the findings.
             withAnimation(.easeInOut(duration: 18).repeatForever(autoreverses: true)) { drift = true }

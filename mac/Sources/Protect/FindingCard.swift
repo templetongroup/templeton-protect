@@ -17,29 +17,29 @@ struct FindingCard: View {
 
     private var tint: Color {
         switch finding.severity {
-        case .critical: return Color(red: 1, green: 0.45, blue: 0.40)
-        case .high: return Color(red: 1, green: 0.72, blue: 0.38)
-        default: return .white.opacity(0.45)
+        case .critical: return Ink.critical
+        case .high: return Ink.high
+        default: return Ink.secondary(Dim.faint)
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 13) {
-                Circle().fill(tint).frame(width: 8, height: 8).padding(.top, 7)
+            HStack(alignment: .top, spacing: Space.md) {
+                Circle().fill(tint).frame(width: Space.sm, height: Space.sm).padding(.top, Space.xs + 2)
                     .shadow(color: tint.opacity(0.7), radius: 5)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Space.sm) {
                     Text(finding.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: FontSize.body, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     Text(finding.plain)
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(.white.opacity(0.66))
+                        .font(.system(size: FontSize.small))
+                        .foregroundStyle(Ink.secondary())
                         .fixedSize(horizontal: false, vertical: true)
                     Text(finding.where_)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .font(.system(size: FontSize.caption, design: .monospaced))
+                        .foregroundStyle(Ink.secondary(Dim.faint))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -47,7 +47,7 @@ struct FindingCard: View {
                         withAnimation(.easeInOut(duration: 0.18)) { showEvidence.toggle() }
                     } label: {
                         Text((showEvidence ? "▾ " : "▸ ") + "What was found")
-                            .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                            .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
                     }
                     .buttonStyle(.plain)
 
@@ -56,68 +56,68 @@ struct FindingCard: View {
                     // to rotate the key properly or stop it recurring.
                     if let g = finding.guidance {
                         Text("Next: \(g.title)")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(red: 0.43, green: 0.88, blue: 0.80).opacity(0.85))
+                            .font(.system(size: FontSize.caption))
+                            .foregroundStyle(Ink.accent.opacity(Dim.strong))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if showEvidence {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Space.xs) {
                             Text(redact(finding.evidence))
                             Text(finding.verified ? "Confirmed by a direct check." : "Pattern match — not confirmed.")
                             Text("Check afterwards: \(finding.validation)")
                         }
-                        .font(.system(size: 12))
+                        .font(.system(size: FontSize.caption))
                         .foregroundStyle(.white.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(18)
+            .padding(Space.lg)
 
             footer
         }
-        .liquidGlass(cornerRadius: 22)
+        .contentSurface(radius: Radius.card)
     }
 
     @ViewBuilder private var footer: some View {
         if let outcome {
-            HStack(spacing: 7) {
+            HStack(spacing: Space.sm) {
                 Image(systemName: outcome.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                 Text(outcome.message).fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 12.5, weight: .medium))
-            .foregroundStyle(outcome.ok ? Color(red: 0.42, green: 0.85, blue: 0.62) : tint)
-            .padding(.horizontal, 18).padding(.bottom, 16)
+            .font(.system(size: FontSize.caption, weight: .medium))
+            .foregroundStyle(outcome.ok ? Ink.good : tint)
+            .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
         } else if let fix = finding.fix {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: Space.sm) {
                 // ⚠️ A DESTRUCTIVE FIX ASKS IN PLACE. A sheet is something people
                 // dismiss; a step that appears where the eye already is, is not.
                 if isArmed {
                     Text(fix.describes)
-                        .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.7))
+                        .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.strong))
                         .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
+                    HStack(spacing: Space.sm) {
                         glassButton("Yes, delete it", tint: tint) { model.apply(finding) }
                         glassButton("Keep it") { model.armed.remove(finding.where_) }
                     }
                 } else {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.md) {
                         glassButton(fix.label, tint: fix.destructive ? tint : nil) {
                             if fix.destructive { model.armed.insert(finding.where_) } else { model.apply(finding) }
                         }
                         Text(fix.describes)
-                            .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.45))
+                            .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            .padding(.horizontal, 18).padding(.bottom, 16)
+            .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
         } else {
             Text("Only you can fix this one — nothing here can do it for you.")
-                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
-                .padding(.horizontal, 18).padding(.bottom, 16)
+                .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
+                .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
         }
     }
 
@@ -125,11 +125,11 @@ struct FindingCard: View {
     private func glassButton(_ label: String, tint: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
                 .foregroundStyle(tint ?? .white)
-                .padding(.horizontal, 15).padding(.vertical, 9)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
         }
         .buttonStyle(.plain)
-        .liquidGlass(cornerRadius: 11, interactive: true)
+        .liquidGlass(cornerRadius: Radius.control, interactive: true)
     }
 }
