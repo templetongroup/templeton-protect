@@ -51,6 +51,20 @@ TypeScript suite is what pins the behaviour.
 - US English, not British. The test suite enforces it.
 - Keep secrets and client content out of the notes and the commit messages.
 
+### This conversation's history
+
+Protect was built inside an AiOS chat, so that transcript holds both projects.
+`tools/extract-session.py` lifts out the Protect half — it cuts at the turn where
+the security-coworker thread begins and repairs the parent chain at the cut, so
+the result reads as a conversation that starts there rather than a truncated one.
+
+    python3 tools/extract-session.py \
+      ~/.claude/projects/-Users-tonyricciardi-Projects-aios-claude/<session>.jsonl
+
+⚠️ **Re-run it at the end of a session.** The source keeps growing while the chat
+is open, so an extract taken mid-session stops where it was taken. It overwrites
+its output rather than appending.
+
 ### Tracking
 
 Linear, team **The Templeton Group**, project **Templeton Protect**. Linear is
