@@ -24,7 +24,7 @@ extension View {
             }
         } else {
             self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(.white.opacity(0.14)))
+                .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Palette.pearl.opacity(0.14)))
         }
     }
 
@@ -32,18 +32,39 @@ extension View {
     /// white circle behind the label and then applied glass on top — so the eye
     /// saw a flat disc with a blur around it. Glass has to be the only thing
     /// between the label and the background, or it is just a grey circle.
+    /// The primary action. Solid, not glass.
+    ///
+    /// ⚠️ GLASS TINT DOES NOT SURVIVE THE WINDOW LOSING FOCUS. Tinted glass was
+    /// tried here first and measured: focused it read champagne, unfocused the
+    /// system dropped the tint and the app's only call to action rendered as a
+    /// plain grey disc. A primary action cannot depend on the window being
+    /// frontmost to be findable. Glass stays on the secondary controls, where
+    /// going quiet when inactive is correct behaviour rather than a fault.
+    func primaryAction() -> some View {
+        self
+            .background(Palette.champagne, in: Capsule())
+            .overlay(Capsule().strokeBorder(Palette.pearl.opacity(0.55), lineWidth: 1))
+            .shadow(color: Palette.champagne.opacity(0.30), radius: 30)
+            .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+    }
+
     @ViewBuilder
     func glassCircle(interactive: Bool = true, tinted: Bool = false) -> some View {
         if #available(macOS 26.0, *) {
             if tinted {
-                self.glassEffect(.regular.tint(Color(red: 0.05, green: 0.70, blue: 0.64).opacity(0.55)).interactive(),
+                self.glassEffect(.regular.tint(Palette.champagne.opacity(0.85)).interactive(),
                                  in: .circle)
             } else {
+                // ⚠️ THE OUTLINE IS NOT DECORATION. Glass goes flat when the
+                // window is not frontmost, and an unlit disc with a word in it
+                // does not read as a button. The border is what says "control"
+                // in the state the material stops saying it.
                 self.glassEffect(.regular.interactive(), in: .circle)
+                    .overlay(Circle().strokeBorder(Palette.pearl.opacity(0.22), lineWidth: 1))
             }
         } else {
             self.background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.18)))
+                .overlay(Circle().strokeBorder(Palette.pearl.opacity(0.18)))
         }
     }
 }
@@ -57,32 +78,51 @@ struct Aurora: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.03, green: 0.07, blue: 0.10),
-                                    Color(red: 0.05, green: 0.11, blue: 0.13)],
-                           startPoint: .top, endPoint: .bottom)
+        // ⚠️ THE DECORATION IS AN OVERLAY, NOT A ZSTACK SIBLING, AND IT IS
+        // CLIPPED. As a ZStack this view reported the size of its largest child —
+        // a 1200pt capsule — so the window's ZStack grew to about 870pt against a
+        // 720pt window and centred itself, pushing roughly 75pt off the top. The
+        // headline sat under the traffic lights and three separate attempts at a
+        // top inset all measured identically, because every one of them was
+        // being applied above the visible edge of the window. An overlay does
+        // not vote on its parent's size; the gradient alone decides it.
+        LinearGradient(colors: [Palette.deep, Palette.mid],
+                       startPoint: .top, endPoint: .bottom)
+            .overlay {
+                ZStack {
 
             // Two pools of brand colour, drifting slowly against each other.
             Circle()
-                .fill(RadialGradient(colors: [Color(red: 0.04, green: 0.63, blue: 0.57).opacity(0.55), .clear],
+                .fill(RadialGradient(colors: [Palette.champagne.opacity(0.20), .clear],
                                      center: .center, startRadius: 0, endRadius: 420))
                 .frame(width: 840, height: 840)
                 .offset(x: drift ? -170 : -260, y: drift ? -230 : -160)
                 .blur(radius: 40)
 
             Circle()
-                .fill(RadialGradient(colors: [Color(red: 0.10, green: 0.44, blue: 0.83).opacity(0.5), .clear],
+                .fill(RadialGradient(colors: [Palette.navy.opacity(0.75), .clear],
                                      center: .center, startRadius: 0, endRadius: 400))
                 .frame(width: 760, height: 760)
                 .offset(x: drift ? 250 : 170, y: drift ? 210 : 280)
                 .blur(radius: 44)
 
             Circle()
-                .fill(RadialGradient(colors: [Color(red: 0.43, green: 0.88, blue: 0.78).opacity(0.34), .clear],
+                .fill(RadialGradient(colors: [Palette.rose.opacity(0.16), .clear],
                                      center: .center, startRadius: 0, endRadius: 260))
                 .frame(width: 520, height: 520)
                 .offset(x: drift ? 120 : 40, y: drift ? -260 : -190)
                 .blur(radius: 50)
+
+            // The mark itself, enormous and nearly gone, bleeding off the right
+            // edge. It ties the window to the icon in the Dock and gives the
+            // composition a weight on the side the text does not occupy.
+            if let swirl = Bundle.main.image(forResource: "swirl") {
+                Image(nsImage: swirl)
+                    .resizable().renderingMode(.template)
+                    .frame(width: 900, height: 900)
+                    .foregroundStyle(Palette.pearl.opacity(0.035))
+                    .offset(x: 380, y: 120)
+            }
 
             // ⚠️ SOMETHING WITH AN EDGE. A material that samples a smooth wash
             // has nothing to bend, so it reads as tinted plastic. These thin
@@ -90,13 +130,16 @@ struct Aurora: View {
             // difference between the effect being visible and not.
             ForEach(0..<3, id: \.self) { i in
                 Capsule()
-                    .stroke(Color.white.opacity(0.055), lineWidth: 1.4)
+                    .stroke(Palette.pearl.opacity(0.055), lineWidth: 1.4)
                     .frame(width: 900 + CGFloat(i) * 150, height: 420 + CGFloat(i) * 120)
                     .rotationEffect(.degrees(drift ? -18 + Double(i) * 7 : -30 + Double(i) * 7))
                     .offset(y: CGFloat(i) * 40 - 60)
                     .blur(radius: 0.4)
             }
-        }
+                }
+                .allowsHitTesting(false)
+            }
+            .clipped()
         .ignoresSafeArea()
         .onAppear {
             guard !reduceMotion else { return }

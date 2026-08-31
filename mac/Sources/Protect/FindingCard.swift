@@ -32,6 +32,7 @@ struct FindingCard: View {
                 VStack(alignment: .leading, spacing: Space.sm) {
                     Text(finding.title)
                         .font(.system(size: FontSize.body, weight: .semibold))
+                        .foregroundStyle(Ink.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(finding.plain)
                         .font(.system(size: FontSize.small))
@@ -68,7 +69,7 @@ struct FindingCard: View {
                             Text("Check afterwards: \(finding.validation)")
                         }
                         .font(.system(size: FontSize.caption))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Ink.secondary(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -89,7 +90,7 @@ struct FindingCard: View {
             }
             .font(.system(size: FontSize.caption, weight: .medium))
             .foregroundStyle(outcome.ok ? Ink.good : tint)
-            .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
+            .padding(.leading, Space.lg + Space.sm + Space.md).padding(.trailing, Space.lg).padding(.bottom, Space.lg)
         } else if let fix = finding.fix {
             VStack(alignment: .leading, spacing: Space.sm) {
                 // ⚠️ A DESTRUCTIVE FIX ASKS IN PLACE. A sheet is something people
@@ -103,21 +104,24 @@ struct FindingCard: View {
                         glassButton("Keep it") { model.armed.remove(finding.where_) }
                     }
                 } else {
-                    HStack(spacing: Space.md) {
-                        glassButton(fix.label, tint: fix.destructive ? tint : nil) {
-                            if fix.destructive { model.armed.insert(finding.where_) } else { model.apply(finding) }
-                        }
-                        Text(fix.describes)
-                            .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
-                            .fixedSize(horizontal: false, vertical: true)
+                    // ⚠️ STACKED, NOT SIDE BY SIDE. A small button next to four
+                    // wrapped lines of explanation gets centred against them, so
+                    // it floated in the middle of a paragraph and the card looked
+                    // broken. What the button does is read before it is pressed,
+                    // so the sentence goes above it.
+                    Text(fix.describes)
+                        .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
+                        .fixedSize(horizontal: false, vertical: true)
+                    glassButton(fix.label, tint: fix.destructive ? tint : nil) {
+                        if fix.destructive { model.armed.insert(finding.where_) } else { model.apply(finding) }
                     }
                 }
             }
-            .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
+            .padding(.leading, Space.lg + Space.sm + Space.md).padding(.trailing, Space.lg).padding(.bottom, Space.lg)
         } else {
             Text("Only you can fix this one — nothing here can do it for you.")
                 .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
-                .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
+                .padding(.leading, Space.lg + Space.sm + Space.md).padding(.trailing, Space.lg).padding(.bottom, Space.lg)
         }
     }
 

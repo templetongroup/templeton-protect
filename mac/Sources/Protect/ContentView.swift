@@ -11,7 +11,19 @@ enum Phase { case idle, scanning, done }
     @Published var elapsed = 0
     @Published var outcomes: [String: FixOutcome] = [:]
     @Published var armed: Set<String> = []
+    /// What is on this Mac, found without scanning. Populated on appear.
+    @Published var installed: [Installed] = []
     private var timer: Timer?
+
+    func detect() {
+        guard installed.isEmpty else { return }
+        // ⚠️ OFF THE MAIN THREAD. Measured at 283ms on a working machine — not
+        // enough to notice in a terminal, plenty to drop frames on launch.
+        Task.detached(priority: .userInitiated) {
+            let found = detectInstallations()
+            await MainActor.run { self.installed = found }
+        }
+    }
 
     func scan() {
         guard phase != .scanning else { return }
@@ -49,16 +61,45 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Aurora()
-            ScrollView { content.padding(.horizontal, Space.xxl).padding(.bottom, Space.huge) }
+            // ⚠️ safeAreaInset, NOT PADDING AND NOT A SPACER VIEW. Two attempts
+            // failed before this one and both failed silently. Padding inside the
+            // scroll view scrolls away the moment the content is taller than the
+            // window, putting the headline under the traffic lights. A fixed
+            // strip stacked above the scroll view is worse: the VStack then
+            // wanted more height than the ZStack had, so the ZStack centred it
+            // and pushed the strip off the top of the window entirely — measured,
+            // by painting it red and finding zero red pixels on screen. An inset
+            // is the one form the scroll view itself honours.
+            ScrollView {
+                content
+                    .padding(.horizontal, Space.xxl)
+                    .padding(.bottom, Space.huge)
+            }
+            // ⚠️ THE SCROLL VIEW MUST BE CLAMPED TO THE WINDOW, and this line is
+            // the whole fix. Without it the scroll view took its content's ideal
+            // height — around 860pt of hero against a 720pt window — the ZStack
+            // grew to match, and a ZStack centres its children, so the top ~70pt
+            // was pushed off the screen. Nothing scrolled, because nothing
+            // thought it had to. That is why three separate attempts at a top
+            // inset all measured identically at 13pt: the inset was there every
+            // time, just above the visible edge of the window.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, Chrome.titleBar)
         }
-        .frame(minWidth: 780, minHeight: 580)
+        .frame(minWidth: 860, minHeight: 580)
+        .onAppear {
+            model.detect()
+            // Lets a screenshot reach the results screen without a click. The
+            // app's own layout is the thing being checked, so it has to be the
+            // real scan and the real findings, not a fixture.
+            if ProcessInfo.processInfo.environment["PROTECT_AUTOSCAN"] != nil { model.scan() }
+        }
         .preferredColorScheme(.dark)
     }
 
     @ViewBuilder private var content: some View {
         if model.phase == .idle {
-            VStack(spacing: 0) { Spacer(minLength: 60); hero; Spacer(minLength: 60) }
-                .frame(maxWidth: .infinity, minHeight: 620)
+            hero.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity)
         } else {
             VStack(alignment: .leading, spacing: Space.xl) {
                 compactHeader
@@ -66,36 +107,151 @@ struct ContentView: View {
             }
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity)
-            .padding(.top, Space.xxl)
         }
     }
 
     // ── idle ──────────────────────────────────────────────────────────
+    //
+    // ⚠️ THE FIRST VERSION WAS A TITLE, A CIRCLE AND A PARAGRAPH IN A VOID.
+    // Centred, symmetrical, and saying nothing the product page does not already
+    // say — a scanner whose opening screen has learned nothing about your machine
+    // has no reason to be an app. This one reads the installations before you
+    // press anything, so the first thing on screen is your own Mac.
     private var hero: some View {
-        VStack(spacing: Space.xl) {
-            VStack(spacing: Space.sm) {
-                Text("Templeton Protect")
+        VStack(alignment: .leading, spacing: Space.huge) {
+            HStack(alignment: .top, spacing: Space.huge) {
+                pitch
+                machine
+            }
+            checks
+        }
+        .padding(.vertical, Space.xxl)
+    }
+
+    /// ⚠️ EVERY CLAIM HERE IS ONE THE ENGINE ACTUALLY MAKES. It is tempting to
+    /// fill the bottom of a sparse screen with feature copy, and a security tool
+    /// that overstates what it checks is worse than one that says nothing.
+    /// These three are the rules in Scan.swift, in the user's words.
+    private var checks: some View {
+        HStack(alignment: .top, spacing: Space.md) {
+            check("key.horizontal.fill", "Keys in your chat history",
+                  "Anthropic, OpenAI, GitHub, Google, Slack and GitLab keys, left behind in conversation logs.")
+            check("lock.open.fill", "Files other accounts can open",
+                  "The file and every folder above it. A loose file inside a locked-down folder is not a problem, and is not reported as one.")
+            check("wifi.slash", "Nothing leaves this Mac",
+                  "The scan is local, and anything it shows you has the secret itself blanked out first.")
+        }
+    }
+
+    private func check(_ icon: String, _ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Image(systemName: icon)
+                .font(.system(size: FontSize.lead))
+                .foregroundStyle(Ink.accent)
+            Text(title)
+                .font(.system(size: FontSize.small, weight: .semibold))
+                .foregroundStyle(Ink.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(body)
+                .font(.system(size: FontSize.caption))
+                .foregroundStyle(Ink.secondary(Dim.faint))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Space.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentSurface(radius: Radius.card)
+    }
+
+    private var pitch: some View {
+        VStack(alignment: .leading, spacing: Space.xl) {
+            VStack(alignment: .leading, spacing: Space.md) {
+                Text("TEMPLETON PROTECT")
+                    .font(.system(size: FontSize.caption, weight: .semibold))
+                    .tracking(1.6)
+                    .foregroundStyle(Ink.accent)
+                Text("Scan your AI,\nthen scan your code.")
                     .font(.system(size: FontSize.display, weight: .semibold, design: .rounded))
-                Text("Scan your AI, then scan your code.")
+                    .foregroundStyle(Ink.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Credentials get pasted into chats and left in conversation logs. This finds them, and finds the files another account on this Mac can read.")
                     .font(.system(size: FontSize.body))
                     .foregroundStyle(Ink.secondary())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 420, alignment: .leading)
             }
 
             Button(action: model.scan) {
-                Text(model.phase == .scanning ? "Scanning" : "Scan")
-                    .font(.system(size: FontSize.title, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 208, height: 208)
-                    .glassCircle(tinted: true)
+                HStack(spacing: Space.sm) {
+                    Image(systemName: "shield.lefthalf.filled")
+                    Text(model.phase == .scanning ? "Scanning" : "Scan this Mac")
+                }
+                .font(.system(size: FontSize.lead, weight: .bold, design: .rounded))
+                .foregroundStyle(Palette.navy)
+                .padding(.horizontal, Space.xxl).padding(.vertical, Space.lg)
+                .primaryAction()
             }
             .buttonStyle(.plain)
+            .keyboardShortcut("r", modifiers: .command)
 
-            Text("Checks the AI assistants installed on this Mac for credentials left in conversation logs, and for files other accounts can read. Nothing is changed unless you ask.")
-                .font(.system(size: FontSize.small))
+            Text("Read-only. Nothing is changed unless you ask for it.")
+                .font(.system(size: FontSize.caption))
                 .foregroundStyle(Ink.secondary(Dim.faint))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 384)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var machine: some View {
+        VStack(alignment: .leading, spacing: Space.md) {
+            HStack {
+                Text("ON THIS MAC")
+                    .font(.system(size: FontSize.caption, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(Ink.secondary(Dim.faint))
+                Spacer()
+                if !model.installed.isEmpty {
+                    Text("\(model.installed.count)")
+                        .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Ink.accent).monospacedDigit()
+                }
+            }
+            .padding(.horizontal, Space.lg).padding(.top, Space.lg)
+
+            if model.installed.isEmpty {
+                Text("Looking…")
+                    .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary(Dim.faint))
+                    .padding(.horizontal, Space.lg).padding(.bottom, Space.lg)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(model.installed) { item in
+                        HStack(spacing: Space.md) {
+                            Circle().fill(Ink.accent).frame(width: 6, height: 6)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(item.tool)
+                                    .font(.system(size: FontSize.small, weight: .medium))
+                                    .foregroundStyle(Ink.primary)
+                                Text(item.dir)
+                                    .font(.system(size: FontSize.caption, design: .monospaced))
+                                    .foregroundStyle(Ink.secondary(Dim.faint))
+                            }
+                            Spacer(minLength: Space.lg)
+                            // ⚠️ TABULAR DIGITS. Counts in a stacked column that
+                            // do not share a digit width read as a ragged mess.
+                            Text(item.atLeast ? "\(item.files)+" : "\(item.files)")
+                                .font(.system(size: FontSize.caption, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundStyle(Ink.secondary())
+                        }
+                        .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
+                        if item.id != model.installed.last?.id {
+                            Rectangle().fill(Ink.panelEdge).frame(height: 1)
+                                .padding(.leading, Space.lg + 6 + Space.md)
+                        }
+                    }
+                }
+                .padding(.bottom, Space.xs)
+            }
+        }
+        .frame(width: 320)
+        .contentSurface(radius: Radius.panel)
     }
 
     // ── header once scanning or done ──────────────────────────────────
@@ -104,7 +260,7 @@ struct ContentView: View {
             Button(action: model.scan) {
                 Text(model.phase == .scanning ? "…" : "Re-scan")
                     .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Ink.primary)
                     .frame(width: 84, height: 84)
                     .glassCircle()
             }
@@ -113,6 +269,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: Space.xs) {
                 Text("Templeton Protect")
                     .font(.system(size: FontSize.title, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Ink.primary)
                 if model.phase == .scanning {
                     // ⚠️ THE WAIT IS REAL, SO IT IS SHOWN. Seventeen seconds of a
                     // still spinner reads as hung; the count says it is working.
@@ -154,6 +311,7 @@ struct ContentView: View {
             VStack(spacing: Space.md) {
                 Text("Nothing to worry about")
                     .font(.system(size: FontSize.title, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Ink.primary)
                 Text("No credentials are sitting in your AI conversation logs, and nothing another account could read.")
                     .font(.system(size: FontSize.small)).foregroundStyle(Ink.secondary())
                     .multilineTextAlignment(.center)

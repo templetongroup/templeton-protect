@@ -37,17 +37,49 @@ enum Dim {
     static let strong: Double = 0.8
 }
 
+/// The palette. Four colors, chosen by Tony, and nothing outside them.
+///
+///     Midnight Navy  #192A56   the ground
+///     Champagne      #F7D794   the one accent
+///     Dusty Rose     #EDA6A3   trouble
+///     Pearl White    #FCFBFB   the ink
+///
+/// ⚠️ SEVERITY IS NOT CARRIED BY COLOR ALONE. Rose and champagne are close in
+/// warmth and a red/green viewer separates them poorly, so every finding also
+/// states its severity in words and carries its own icon. The color is the
+/// second signal, never the only one.
+enum Palette {
+    static let navy = Color(red: 0.098, green: 0.165, blue: 0.337)      // #192A56
+    static let champagne = Color(red: 0.969, green: 0.843, blue: 0.580) // #F7D794
+    static let rose = Color(red: 0.929, green: 0.651, blue: 0.639)      // #EDA6A3
+    static let pearl = Color(red: 0.988, green: 0.984, blue: 0.984)     // #FCFBFB
+
+    /// Two steps below the navy, for the ground the panels sit on. Derived from
+    /// the navy rather than picked, so the family stays one family.
+    static let deep = Color(red: 0.043, green: 0.075, blue: 0.161)
+    static let mid = Color(red: 0.067, green: 0.114, blue: 0.235)
+}
+
 enum Ink {
-    static let primary = Color.white
-    static func secondary(_ o: Double = Dim.muted) -> Color { .white.opacity(o) }
-    static let critical = Color(red: 1.00, green: 0.45, blue: 0.40)
-    static let high = Color(red: 1.00, green: 0.72, blue: 0.38)
-    static let good = Color(red: 0.42, green: 0.85, blue: 0.62)
-    static let accent = Color(red: 0.43, green: 0.88, blue: 0.80)
+    static let primary = Palette.pearl
+    static func secondary(_ o: Double = Dim.muted) -> Color { Palette.pearl.opacity(o) }
+    static let critical = Palette.rose
+    static let high = Palette.champagne
+    /// Nothing wrong. Navy lifted toward pearl — calm, and clearly not a warning.
+    static let good = Color(red: 0.749, green: 0.816, blue: 0.910)
+    static let accent = Palette.champagne
     /// The panel behind content. Lighter reads as closer — that is the depth
     /// cue here, not a heavier shadow.
-    static let panel = Color.white.opacity(0.06)
-    static let panelEdge = Color.white.opacity(0.10)
+    static let panel = Palette.pearl.opacity(0.06)
+    static let panelEdge = Palette.pearl.opacity(0.10)
+}
+
+/// ⚠️ THE WINDOW IS fullSizeContentView, SO CONTENT STARTS AT y=0 — underneath
+/// the traffic lights. Without this inset the headline ran straight into the
+/// close button and the eyebrow above it was clipped off the top of the window
+/// entirely. Every screen reserves the same strip.
+enum Chrome {
+    static let titleBar: CGFloat = 52
 }
 
 enum Radius {

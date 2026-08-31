@@ -199,7 +199,12 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                 findings.append(Finding(
                     rule: "secrets-in-transcripts", layer: "harness",
                     severity: reachable ? .critical : .high,
-                    title: "Live credentials are sitting in an agent transcript",
+                    // ⚠️ THE TITLE NAMES THE TOOL AND THE VENDOR. Four findings
+                    // all headed "Live credentials are sitting in an agent
+                    // transcript" is a list you cannot read: identical cards,
+                    // and the only thing separating them a long path in small
+                    // grey type. The heading has to be the thing that differs.
+                    title: "\(unique.joined(separator: " and ")) \(unique.count == 1 ? "key" : "keys") in a \(ai.tool) transcript",
                     where_: display,
                     evidence: "\(vendors.count) key-shaped value(s) — \(unique.joined(separator: ", ")) — in a conversation log" + (reachable ? ", in a folder other accounts can read" : ""),
                     remedy: "Rotate those keys, then delete or prune this transcript.",
@@ -207,7 +212,8 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                     plain: "A conversation with an AI assistant was saved to disk, and \(vendors.count == 1 ? "a password-like key was" : "\(vendors.count) password-like keys were") left sitting in it in plain text" + (reachable ? " — in a folder other accounts on this Mac can read" : "") + ". Keys usually end up here because somebody pasted one into the chat, or a command printed one. These logs are kept forever and nothing clears them out.",
                     verified: true,
                     fix: FixAction(label: "Delete this transcript",
-                                   describes: "Permanently removes \(display). You lose that conversation's history. It does NOT rotate the keys — only the service that issued them can do that.",
+                                   // The path is already on the card, in full.
+                                   describes: "Deletes this log for good. You lose that conversation's history, and the keys stay live — only the service that issued them can rotate those.",
                                    kind: .deleteFile, target: display, mode: nil, destructive: true),
                     guidance: Guidance(title: "How to rotate a leaked key properly",
                                        skill: "performing-service-account-credential-rotation")))
@@ -230,7 +236,7 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                     : "Anyone else who uses this Mac can open this file. It holds no passwords, but it does list what your AI assistant is allowed to do without asking.",
                 verified: true,
                 fix: FixAction(label: "Make it private",
-                               describes: "Sets \(display) so only your account can read it. Nothing is deleted and the file keeps working.",
+                               describes: "Sets this file so only your account can read it. Nothing is deleted and the file keeps working.",
                                kind: .chmod, target: display, mode: 0o600, destructive: false),
                 guidance: sensitive
                     ? Guidance(title: "Keeping credentials out of files in the first place",

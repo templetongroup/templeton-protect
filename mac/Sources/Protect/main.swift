@@ -37,8 +37,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // through — the one detail that gives away a fake.
         window.isMovableByWindowBackground = true
         window.minSize = NSSize(width: 780, height: 580)
+        // ⚠️ SET ON THE WINDOW, NOT JUST THE VIEW. preferredColorScheme styles
+        // SwiftUI controls but leaves AppKit's own label color in light mode,
+        // which is how the app's own title came out black on navy.
+        window.appearance = NSAppearance(named: .darkAqua)
         window.center()
         window.contentView = NSHostingView(rootView: ContentView(model: model))
+        if ProcessInfo.processInfo.environment["PROTECT_GEOM"] != nil {
+            let cv = window.contentView!
+            FileHandle.standardError.write("""
+            frame=\(cv.frame)
+            contentLayoutRect=\(window.contentLayoutRect)
+            windowFrame=\(window.frame)
+
+            """.data(using: .utf8)!)
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

@@ -18,6 +18,7 @@ cp Protect.icns "$APP/Contents/Resources/Protect.icns"
 # ⚠️ THE UI IS A RESOURCE, NOT A FILE ON DISK SOMEWHERE. Loading it from the
 # bundle is what makes the app self-contained — move it anywhere and it works.
 cp Resources/index.html "$APP/Contents/Resources/index.html"
+cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 
 # Ad-hoc signing so Gatekeeper will run it locally. A Developer ID and
 # notarization are needed before it goes to anybody else — see TG-283.
