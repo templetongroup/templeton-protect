@@ -115,3 +115,14 @@ test("the offered fix is redaction, and it is not destructive", () => {
   assert.equal(f.fix.kind, "redact-in-file");
   assert.equal(f.fix.destructive, false);
 });
+
+// Rotation is the fix; redaction is the clean-up. The advice has to name the
+// page, or "rotate your keys" is a lecture rather than something to go and do.
+test("the finding tells you where to rotate each vendor's key", () => {
+  const hits = findKeys("sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345 ghp_AbCdEfGh1jKlMn0pQrStUvWxYz01234567");
+  const f = transcriptFinding("~/a.jsonl", hits, false);
+  assert.match(f.remedy, /platform\.openai\.com/, "OpenAI keys should name their rotation page");
+  assert.match(f.remedy, /github\.com\/settings\/tokens/, "GitHub tokens should name theirs");
+  assert.match(f.fix.describes, /platform\.openai\.com/, "and it must sit beside the button too");
+  assert.match(f.remedy, /Rotate the keys first/, "rotation comes before the clean-up");
+});

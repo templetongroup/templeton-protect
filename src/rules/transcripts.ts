@@ -92,6 +92,32 @@ export function redactKeys(contents: string): { text: string; removed: number } 
 }
 
 /**
+ * Where each vendor's keys are rotated.
+ *
+ * ⚠️ ROTATING IS THE FIX; TAKING THE KEY OUT OF THE FILE IS THE CLEAN-UP. Tony,
+ * on the remedy text: "i would offer the advice of rotating the key along with
+ * the delete from transcript button." Neither redacting nor deleting makes a
+ * leaked key safe — it sat in plain text and must be assumed copied. Naming the
+ * page turns "rotate your keys" from a lecture into something a person can do
+ * in the next minute.
+ */
+const ROTATE_AT: Record<string, string> = {
+  OpenAI: "platform.openai.com/api-keys",
+  Anthropic: "console.anthropic.com/settings/keys",
+  GitHub: "github.com/settings/tokens",
+  Google: "console.cloud.google.com/apis/credentials",
+  Slack: "api.slack.com/apps",
+  GitLab: "gitlab.com/-/user_settings/personal_access_tokens",
+  "Artificial Analysis": "artificialanalysis.ai (account settings)",
+};
+
+function rotateAdvice(vendors: string[]): string {
+  const known = vendors.filter((v) => ROTATE_AT[v]);
+  if (known.length === 0) return "Rotate them wherever they were issued.";
+  return "Rotate: " + known.map((v) => `${v} at ${ROTATE_AT[v]}`).join("; ") + ".";
+}
+
+/**
  * ⚠️ ONE FINDING PER FILE, NOT ONE PER KEY. A transcript with forty matches is
  * one thing to fix — delete or rotate — and forty rows would bury every other
  * finding in the report.
@@ -108,10 +134,10 @@ export function transcriptFinding(display: string, hits: KeyHit[], reachable: bo
     evidence: `${hits.length} key-shaped value(s) — ${vendors.join(", ")} — in a conversation log${reachable ? ", in a directory other accounts can read" : ""}`,
     validation: "Re-run the scan; this file should report no key-shaped values.",
     plain: `A conversation with an AI assistant was saved to disk, and ${hits.length === 1 ? "a password-like key was" : hits.length + " password-like keys were"} left sitting in it in plain text${reachable ? " — in a folder other accounts on this Mac can read" : ""}. Keys usually end up here because somebody pasted one into the chat, or a command printed one. These logs are kept forever and nothing clears them out.`,
-    remedy: "Rotate those keys, then take the key out of this transcript. Agent history is kept forever by default and nothing rotates it.",
+    remedy: `Rotate the keys first — that is the only thing that makes them safe — then take them out of this transcript. ${rotateAdvice(vendors)} Agent history is kept forever by default and nothing rotates it.`,
     fix: {
       label: "Remove the key from this transcript",
-      describes: `Replaces ${hits.length === 1 ? "the key-shaped value" : `all ${hits.length} key-shaped values`} in ${display} with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys — only the service that issued them can do that, and you should treat them as compromised either way.`,
+      describes: `Replaces ${hits.length === 1 ? "the key-shaped value" : `all ${hits.length} key-shaped values`} in ${display} with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys, and that is the step that actually matters: they have been sitting in plain text, so treat them as compromised whatever you do here. ${rotateAdvice(vendors)}`,
       kind: "redact-in-file",
       target: display,
       // Editing one value out of a file is not destroying somebody's history.
