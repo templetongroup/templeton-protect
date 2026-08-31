@@ -208,7 +208,9 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                     verified: true,
                     fix: FixAction(label: "Delete this transcript",
                                    describes: "Permanently removes \(display). You lose that conversation's history. It does NOT rotate the keys — only the service that issued them can do that.",
-                                   kind: .deleteFile, target: display, mode: nil, destructive: true)))
+                                   kind: .deleteFile, target: display, mode: nil, destructive: true),
+                    guidance: Guidance(title: "How to rotate a leaked key properly",
+                                       skill: "performing-service-account-credential-rotation")))
                 continue
             }
 
@@ -229,7 +231,11 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                 verified: true,
                 fix: FixAction(label: "Make it private",
                                describes: "Sets \(display) so only your account can read it. Nothing is deleted and the file keeps working.",
-                               kind: .chmod, target: display, mode: 0o600, destructive: false)))
+                               kind: .chmod, target: display, mode: 0o600, destructive: false),
+                guidance: sensitive
+                    ? Guidance(title: "Keeping credentials out of files in the first place",
+                               skill: "implementing-secrets-management-with-vault")
+                    : nil))
         }
     }
 

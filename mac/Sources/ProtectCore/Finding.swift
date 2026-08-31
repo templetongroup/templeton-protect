@@ -36,11 +36,27 @@ public struct Finding: Codable {
     public let plain: String
     public let verified: Bool
     public let fix: FixAction?
+    /**
+     ⚠️ A FIX BUTTON AND A REMEDY ARE NOT THE SAME AS KNOWING WHAT TO DO NEXT.
+     "Delete this transcript" removes the file; it does not tell somebody how to
+     rotate a key properly, or how to stop it happening again. This points at a
+     vendored playbook that does — see skills/NOTICE for where they come from and
+     why only four of the upstream 818 are here.
+     */
+    public let guidance: Guidance?
 
     enum CodingKeys: String, CodingKey {
-        case rule, layer, severity, title, evidence, remedy, validation, plain, verified, fix
+        case rule, layer, severity, title, evidence, remedy, validation, plain, verified, fix, guidance
         case where_ = "where"
     }
+}
+
+public struct Guidance: Codable {
+    /// What the reader gets out of it, not the folder name.
+    public let title: String
+    /// Folder under skills/, relative to the repository root.
+    public let skill: String
+    public init(title: String, skill: String) { self.title = title; self.skill = skill }
 }
 
 public struct ScanResult: Codable {

@@ -1,0 +1,16 @@
+The skills in this directory are taken unmodified from
+mukul975/anthropic-cybersecurity-skills, which is licensed under the Apache
+License 2.0. A copy of that licence is in LICENSE-apache-2.0.
+
+⚠️ THEY ARE APACHE 2.0, NOT MIT. The rest of Templeton Protect is MIT; these
+files keep their own licence and their own attribution, and that distinction has
+to survive into any build or package that includes them. Apache 2.0 permits this
+use and requires the notice — it does not permit quietly relicensing them.
+
+⚠️ FOUR OF 818, DELIBERATELY. The upstream library covers the whole security
+domain, including offensive techniques (extracting credentials from memory,
+abusing DPAPI) that have no place in a defensive scanner. Only the remediation
+guidance matching a rule Protect actually implements is vendored, so every file
+here is reachable from a finding rather than sitting in the repo as ballast.
+
+Source: https://github.com/mukul975/anthropic-cybersecurity-skills
