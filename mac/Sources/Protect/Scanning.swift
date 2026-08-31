@@ -53,7 +53,7 @@ struct ScanningView: View {
     private var active: some View {
         VStack(spacing: Space.lg) {
             Pulse(active: !reduceMotion)
-                .frame(width: 132, height: 132)
+                .frame(width: 168, height: 168)
 
             VStack(spacing: Space.xs) {
                 // ⚠️ THE FILE NAME IS THE HEADLINE, THE FOLDER IS THE FOOTNOTE.
@@ -179,7 +179,7 @@ private struct Pulse: View {
                 Circle()
                     .strokeBorder(Ink.accent.opacity(0.35 - Double(i) * 0.09),
                                   lineWidth: 1.5)
-                    .scaleEffect(phase ? 1.0 : 0.55 + Double(i) * 0.12)
+                    .scaleEffect(phase ? 1.0 : 0.62 + Double(i) * 0.10)
                     .opacity(phase ? 0 : 1)
                     .animation(active
                                ? .easeOut(duration: 2.2).repeatForever(autoreverses: false)
@@ -187,10 +187,16 @@ private struct Pulse: View {
                                : nil,
                                value: phase)
             }
-            if let swirl = Bundle.main.image(forResource: "swirl") {
+            // ⚠️ THE MARK ASSET, NOT THE BACKGROUND ONE, AND BIGGER. The 1024px
+            // background swirl squeezed to 64pt put the thinnest arc at about a
+            // pixel wide, and it broke into dashes. This is a 256px asset cut
+            // with a softer mask and pre-resized offline; at 92pt the thinnest
+            // arc lands near 1.6px, which survives.
+            if let swirl = Bundle.main.image(forResource: "swirl-mark") {
                 Image(nsImage: swirl)
-                    .resizable().renderingMode(.template).scaledToFit()
-                    .frame(width: 64, height: 64)
+                    .resizable().renderingMode(.template).interpolation(.high).antialiased(true)
+                    .scaledToFit()
+                    .frame(width: 92, height: 92)
                     .foregroundStyle(Ink.accent)
                     .rotationEffect(.degrees(phase ? 360 : 0))
                     .animation(active ? .linear(duration: 9).repeatForever(autoreverses: false) : nil,

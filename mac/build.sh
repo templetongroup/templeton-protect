@@ -19,6 +19,7 @@ cp Protect.icns "$APP/Contents/Resources/Protect.icns"
 # bundle is what makes the app self-contained — move it anywhere and it works.
 cp Resources/index.html "$APP/Contents/Resources/index.html"
 cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
+cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
 
 # Ad-hoc signing so Gatekeeper will run it locally. A Developer ID and

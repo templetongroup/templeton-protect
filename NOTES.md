@@ -84,7 +84,16 @@ there is no Swift test target on this machine.
   wrong header, and the file still opens and still looks plausible.
 - The destination always comes from an `NSSavePanel`. Writing a file full of
   paths into Downloads unasked is the sort of thing this app warns people about.
-- The PDF is typeset with CoreText and paginates; headings never end a page.
+- The PDF is typeset with CoreText and paginates; headings never end a page. It
+  carries the mark as a watermark, a summary band, severity dots in the gutter,
+  paths in tinted boxes, and a footer with the page number.
+- ⚠️ **The print palette is the screen palette darkened.** Champagne is invisible
+  on paper and dusty rose is too light to read at 9pt. The darkened set is
+  declared once at the top of `ExportPDF.swift` rather than reached for ad hoc.
+- ⚠️ **The watermark is clipped-and-filled, not drawn.** The mark asset is white
+  ink on transparency — right for the screen, and on white paper it produces
+  exactly nothing, which is what the first version shipped. Use it as a mask and
+  fill navy.
 
 ## The footer
 
@@ -140,6 +149,20 @@ installed app when the source was mid-rebuild.
     mv "/Applications/.Protect.new" "/Applications/Templeton Protect.app"
 
 ## The icon
+
+There are two swirl assets and they are cut differently:
+
+- `mac/Resources/swirl.png` (1024px) — the ambient background mark.
+- `mac/Resources/swirl-mark.png` (256px, mask floor 130) — the scanning
+  animation and the PDF watermark.
+
+⚠️ **The small one needs a softer mask, and that is measured, not taste.** The
+icon uses floor 150 because at 694px a hard edge is invisible. The thinnest arc
+in the artwork is 9px at 1024, which is 1.12px at 64pt on a 2x screen — with no
+anti-aliasing left it broke into dashes. The body blue runs 119–134 luminance
+over 99.9% of its area, so 130 zeroes it (mean leak 0.0002) while keeping 48%
+more soft edge than 150. It is also pre-resized with Lanczos rather than
+resampled at runtime by SwiftUI, and drawn at 92pt.
 
 `mac/make-icon.py` — Champagne body, Midnight Navy swirl, the mark shared with
 Radiant and AiOS, at the same proportions (body 0.896, swirl 0.678) so the three sit together
