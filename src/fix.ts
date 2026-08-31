@@ -1,9 +1,10 @@
-import { chmodSync, lstatSync, rmSync, statSync } from "node:fs";
+import { chmodSync, lstatSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { AI_HOMES } from "./scan.ts";
 import type { FixAction } from "./finding.ts";
+import { findKeys, redactKeys } from "./rules/transcripts.ts";
 
 // Applying a fix, which is the only place this program writes anything.
 //
@@ -70,6 +71,40 @@ export function applyFix(fix: FixAction, home = homedir()): FixOutcome {
     return now === mode
       ? { ok: true, message: `Now readable only by you (${now.toString(8)}).` }
       : { ok: false, message: `Permissions did not change — still ${now.toString(8)}.` };
+  }
+
+  if (fix.kind === "redact-in-file") {
+    let before: string;
+    try {
+      before = readFileSync(full, "utf8");
+    } catch (err) {
+      return { ok: false, message: `Could not read it: ${err instanceof Error ? err.message : "unknown"}` };
+    }
+    const { text, removed } = redactKeys(before);
+    if (removed === 0) {
+      return { ok: true, message: "No key-shaped values left in it — nothing to remove." };
+    }
+    // ⚠️ WRITE BESIDE IT AND RENAME. Truncating the real file and refilling it
+    // means an interrupted write leaves somebody's conversation half destroyed —
+    // which is precisely the outcome this fix exists to avoid.
+    const tmp = `${full}.protect-${process.pid}`;
+    try {
+      writeFileSync(tmp, text, { mode: 0o600 });
+      renameSync(tmp, full);
+    } catch (err) {
+      try { rmSync(tmp); } catch { /* the temp file is not worth a second failure */ }
+      return { ok: false, message: `Could not rewrite it: ${err instanceof Error ? err.message : "unknown"}` };
+    }
+    // ⚠️ CONFIRM IT ACTUALLY TOOK, the same as chmod above. Telling somebody a
+    // key is gone when it is still on disk is worse than not offering the fix.
+    const after = findKeys(readFileSync(full, "utf8"));
+    if (after.length > 0) {
+      return { ok: false, message: `Rewrote it, but ${after.length} key-shaped value(s) are still there. Do not treat this as fixed.` };
+    }
+    return {
+      ok: true,
+      message: `Removed ${removed} key${removed === 1 ? "" : "s"} and kept the conversation. They still need rotating at the service that issued them.`,
+    };
   }
 
   if (fix.kind === "delete-file") {

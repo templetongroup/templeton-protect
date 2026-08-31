@@ -62,6 +62,36 @@ export function findKeys(contents: string): KeyHit[] {
 }
 
 /**
+ * Replace every key-shaped value with a marker, leaving everything else byte for
+ * byte as it was.
+ *
+ * ⚠️ THE FIX FOR A KEY IS NOT DESTROYING THE CONVERSATION. The only remedy this
+ * rule used to offer was deleting the whole transcript — for a scanner aimed at
+ * other people's machines that is a cure worse than the disease, so nobody
+ * presses it and the key stays. Tony: "if it surfaces something like an openai
+ * key in a transcript, how can we delete the entire session from their folders?
+ * that would be incredibly destructive."
+ *
+ * Built from KEY_SHAPES, the same list the scan matches on, so the fix cannot
+ * quietly cover less than the finding claims. Placeholders are skipped for the
+ * same reason they are not reported.
+ */
+export function redactKeys(contents: string): { text: string; removed: number } {
+  let removed = 0;
+  let text = contents;
+  for (const { name, re } of KEY_SHAPES) {
+    text = text.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"), (m) => {
+      if (isPlaceholder(m.replace(/^(sk-ant-|sk-|gh[pousr]_|AIza|xox.-|glpat-|aa_)/, ""))) return m;
+      removed++;
+      // Same length is not the goal; saying what happened is. A reader of this
+      // transcript later should understand why the value is gone.
+      return `[${name} key removed by Templeton Protect]`;
+    });
+  }
+  return { text, removed };
+}
+
+/**
  * ⚠️ ONE FINDING PER FILE, NOT ONE PER KEY. A transcript with forty matches is
  * one thing to fix — delete or rotate — and forty rows would bury every other
  * finding in the report.
@@ -76,16 +106,18 @@ export function transcriptFinding(display: string, hits: KeyHit[], reachable: bo
     title: `Live credentials are sitting in an agent transcript`,
     where: display,
     evidence: `${hits.length} key-shaped value(s) — ${vendors.join(", ")} — in a conversation log${reachable ? ", in a directory other accounts can read" : ""}`,
-    remedy: "Rotate those keys, then delete or prune this transcript. Agent history is kept forever by default and nothing rotates it.",
     validation: "Re-run the scan; this file should report no key-shaped values.",
     plain: `A conversation with an AI assistant was saved to disk, and ${hits.length === 1 ? "a password-like key was" : hits.length + " password-like keys were"} left sitting in it in plain text${reachable ? " — in a folder other accounts on this Mac can read" : ""}. Keys usually end up here because somebody pasted one into the chat, or a command printed one. These logs are kept forever and nothing clears them out.`,
+    remedy: "Rotate those keys, then take the key out of this transcript. Agent history is kept forever by default and nothing rotates it.",
     fix: {
-      label: "Delete this transcript",
-      describes: `Permanently removes ${display}. You lose that conversation's history. It does NOT rotate the keys — only the service that issued them can do that, and you should treat them as compromised either way.`,
-      kind: "delete-file",
+      label: "Remove the key from this transcript",
+      describes: `Replaces ${hits.length === 1 ? "the key-shaped value" : `all ${hits.length} key-shaped values`} in ${display} with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys — only the service that issued them can do that, and you should treat them as compromised either way.`,
+      kind: "redact-in-file",
       target: display,
-      // ⚠️ There is no undo, and the button must carry that weight.
-      destructive: true,
+      // Editing one value out of a file is not destroying somebody's history.
+      // Deleting the whole transcript to remove a key is a cure worse than the
+      // disease, and on a client's machine it is not ours to do.
+      destructive: false,
     },
     // Proved by matching a vendor-specific key shape, with placeholders excluded.
     verified: true,

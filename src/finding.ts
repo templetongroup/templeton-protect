@@ -59,7 +59,7 @@ export interface FixAction {
   label: string;
   /** What will happen, in full, before anybody presses it. */
   describes: string;
-  kind: "chmod" | "delete-file";
+  kind: "chmod" | "delete-file" | "redact-in-file";
   target: string;
   /** chmod only. */
   mode?: number;

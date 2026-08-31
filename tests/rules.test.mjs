@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { reachableByOthers, severityFor, octal } from "../src/rules/reachability.ts";
-import { findKeys, transcriptFinding } from "../src/rules/transcripts.ts";
+import { findKeys, redactKeys, transcriptFinding } from "../src/rules/transcripts.ts";
 import { redact, bySeverity } from "../src/finding.ts";
 
 // ⚠️ A SECURITY TOOL THAT CRIES WOLF IS WORSE THAN NO TOOL, and one that stays
@@ -78,4 +78,40 @@ test("verified findings outrank inferred ones at the same severity", () => {
 test("octal formatting is readable", () => {
   assert.equal(octal(0o644), "644");
   assert.equal(octal(0o600), "600");
+});
+
+
+// ⚠️ THE FIX MUST NOT BE WORSE THAN THE PROBLEM. This rule used to offer only
+// "delete this transcript" — destroying somebody's whole conversation to remove
+// one key, on a machine that may not be ours. Tony: "that would be incredibly
+// destructive." Redaction has to take the key out and leave everything else.
+test("redacting a transcript removes the keys and keeps the conversation", () => {
+  const before = [
+    'here is the key sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345 use it',
+    'and a token ghp_AbCdEfGh1jKlMn0pQrStUvWxYz01234567',
+    'a placeholder like sk-YOUR-KEY-HERE should be left alone',
+    'ordinary conversation worth keeping',
+  ].join("\n");
+
+  const { text, removed } = redactKeys(before);
+
+  assert.equal(removed, 2, "both real keys should be removed");
+  assert.equal(findKeys(text).length, 0, "no key-shaped values may remain");
+  assert.ok(text.includes("sk-YOUR-KEY-HERE"), "a placeholder is not a key and must survive");
+  assert.ok(text.includes("ordinary conversation worth keeping"), "the conversation must survive");
+  assert.equal(text.split("\n").length, before.split("\n").length, "no lines may be lost");
+  assert.ok(!text.includes("Ab3dEfGh1jKlMn0pQrStUvWxYz012345"), "the secret itself must be gone");
+});
+
+test("redacting a transcript with no keys changes nothing", () => {
+  const clean = "just a normal conversation\nwith two lines";
+  const { text, removed } = redactKeys(clean);
+  assert.equal(removed, 0);
+  assert.equal(text, clean, "a file with nothing to fix must come back byte for byte");
+});
+
+test("the offered fix is redaction, and it is not destructive", () => {
+  const f = transcriptFinding("~/a.jsonl", findKeys("sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"), false);
+  assert.equal(f.fix.kind, "redact-in-file");
+  assert.equal(f.fix.destructive, false);
 });
