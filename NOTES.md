@@ -221,6 +221,33 @@ there is no Swift test target on this machine.
   exactly nothing, which is what the first version shipped. Use it as a mask and
   fill navy.
 
+## Controls
+
+⚠️ **`.frame()` ON A `Text` DOES NOT MAKE AN 84pt TARGET.** The Back button drew
+an 84pt glass circle and only the letters responded to a click — the frame lays
+the button out at that size, but there is nothing behind the text for SwiftUI to
+hit-test, so the label's hit region stays the shape of the glyphs. Tony: *"that
+back button is awkward in that it only works if you click exactly on the Back
+text."* A control that looks like a large target and behaves like a small one is
+worse than one that looks small, because the miss has no explanation. State the
+region: `.contentShape(Circle())`, matching the shape you can see.
+
+Measured on the running app rather than assumed: a click 35pt left of centre —
+inside the circle, nowhere near a glyph — goes back; one 66pt above the centre,
+outside the circle, does not. So the target is the circle, not an oversized
+rectangle.
+
+⚠️ **A click on a window that is not key activates it and the control never sees
+the press.** Two runs of that test read as failures for this reason before the
+window was brought forward first. A false negative from focus looks exactly like
+a layout bug.
+
+⚠️ **A control is one color or it is two things.** The first version put the
+chevron in champagne and the word in pearl; Tony: *"the Back should also be in the
+same yellow."* Half a control in the accent and half in the ink reads as two
+elements that happen to sit near each other. The `foregroundStyle` goes on the
+stack, not on each child.
+
 ## The footer
 
 "Templeton Protect is a Templeton Technologies product" and the mark, linking to templetontech.com —

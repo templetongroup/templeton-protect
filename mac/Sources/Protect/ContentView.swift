@@ -544,13 +544,41 @@ struct ContentView: View {
             // to repeat, and the button that used to re-run the only scan now
             // has to return somewhere a choice can be made.
             Button { model.phase = .idle } label: {
-                Text(model.phase == .scanning ? "…" : "Back")
-                    .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Ink.primary)
-                    .frame(width: 84, height: 84)
-                    .glassCircle()
+                VStack(spacing: 2) {
+                    if model.phase == .scanning {
+                        Text("…")
+                            .font(.system(size: FontSize.lead, weight: .semibold, design: .rounded))
+                    } else {
+                        // ⚠️ AN ARROW, BECAUSE THE WORD ALONE IS NOT AN AFFORDANCE —
+                        // and both of them in champagne, because half a control in
+                        // the accent and half in the ink reads as two things that
+                        // happen to be near each other rather than one button.
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: FontSize.body, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
+                    }
+                }
+                .foregroundStyle(Ink.accent)
+                .frame(width: 84, height: 84)
+                /*
+                 ⚠️ contentShape, OR ONLY THE GLYPHS ARE CLICKABLE. Tony: "that
+                 back button is awkward in that it only works if you click
+                 exactly on the Back text."
+
+                 The 84pt frame lays the button out at 84pt and the glass draws a
+                 disc that size, but a `.frame` around text does not give SwiftUI
+                 anything to hit-test in the empty space around it — the label's
+                 hit region stays the shape of the letters. So the control looks
+                 like a large target and behaves like a small one, which is worse
+                 than looking small, because the miss is unexplained. This states
+                 the region explicitly, and it is the circle you can see.
+                 */
+                .contentShape(Circle())
+                .glassCircle()
             }
             .buttonStyle(.plain)
+            .help("Back to the three scans")
 
             VStack(alignment: .leading, spacing: Space.xs) {
                 Text("Templeton Protect")
