@@ -47,8 +47,12 @@ struct FindingCard: View {
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) { showEvidence.toggle() }
                     } label: {
+                        // ⚠️ THIS IS A CONTROL, SO IT IS COLOURED LIKE ONE. In
+                        // faint grey it read as another line of metadata and
+                        // nobody would know there was anything behind it.
                         Text((showEvidence ? "▾ " : "▸ ") + "What was found")
-                            .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.faint))
+                            .font(.system(size: FontSize.caption, weight: .medium))
+                            .foregroundStyle(Palette.rose)
                     }
                     .buttonStyle(.plain)
 

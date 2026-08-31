@@ -47,9 +47,25 @@ radius. Nothing picks a value outside them.
   colour was the app's own title, and it rendered black on navy. The window is
   `darkAqua` as well, but do not rely on it.
 
+## Exports
+
+`mac/Sources/ProtectCore/Export.swift` (CSV, Markdown) and `ExportPDF.swift`.
+They live in the core, not the app, so `Probe` can run them against a real scan —
+there is no Swift test target on this machine.
+
+- ⚠️ **Every export runs through `redact()`.** A report carrying the key it found
+  has copied that key somewhere new — a Downloads folder, an email, a ticket —
+  which is the exact failure this tool exists to catch.
+- ⚠️ **CSV is RFC 4180 quoted.** A path can contain a comma and evidence can
+  contain a quote mark; either one unescaped shifts every later column under the
+  wrong header, and the file still opens and still looks plausible.
+- The destination always comes from an `NSSavePanel`. Writing a file full of
+  paths into Downloads unasked is the sort of thing this app warns people about.
+- The PDF is typeset with CoreText and paginates; headings never end a page.
+
 ## The footer
 
-"A Templeton Technologies Product" and the mark, linking to templetontech.com —
+"Templeton Protect is a Templeton Technologies product" and the mark, linking to templetontech.com —
 the same footer Radiant and AiOS carry, so the three read as one company's
 products. The mark is `mac/Resources/templeton-tech.png`, copied from Radiant's
 `public/templeton-tech.png`; keep them the same file. Opening the link uses
@@ -102,15 +118,16 @@ installed app when the source was mid-rebuild.
 
 ## The icon
 
-`mac/make-icon.py` — Dusty Rose body, the white swirl shared with Radiant and
-AiOS, at the same proportions (body 0.896, swirl 0.678) so the three sit together
+`mac/make-icon.py` — Champagne body, Midnight Navy swirl, the mark shared with
+Radiant and AiOS, at the same proportions (body 0.896, swirl 0.678) so the three sit together
 in the Dock.
 
 - ⚠️ **The swirl is lifted, never re-rendered.** Re-drawing it through a
   blur/threshold pass whose radius scales with output size ate the thin inner
   arcs and turned the rings into blobs.
 - ⚠️ **Not a navy body.** That is Radiant's icon in a different blue, and side by
-  side in the Dock the two are indistinguishable.
+  side in the Dock the two are indistinguishable. The mark is deliberately
+  shared; the body colour is what separates the family members.
 - ⚠️ The mask's low end is 150, not 120. AiOS's own body blue measures ~116
   luminance, so a floor of 120 left the whole crop box at 0.03–0.10 coverage —
   invisible on Radiant's mid blue, a distinct lighter square on Midnight Navy.

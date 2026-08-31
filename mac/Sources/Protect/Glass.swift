@@ -124,18 +124,6 @@ struct Aurora: View {
                     .offset(x: 380, y: 120)
             }
 
-            // ⚠️ SOMETHING WITH AN EDGE. A material that samples a smooth wash
-            // has nothing to bend, so it reads as tinted plastic. These thin
-            // arcs are what the glass actually refracts, and they are the
-            // difference between the effect being visible and not.
-            ForEach(0..<3, id: \.self) { i in
-                Capsule()
-                    .stroke(Palette.pearl.opacity(0.055), lineWidth: 1.4)
-                    .frame(width: 900 + CGFloat(i) * 150, height: 420 + CGFloat(i) * 120)
-                    .rotationEffect(.degrees(drift ? -18 + Double(i) * 7 : -30 + Double(i) * 7))
-                    .offset(y: CGFloat(i) * 40 - 60)
-                    .blur(radius: 0.4)
-            }
                 }
                 .allowsHitTesting(false)
             }

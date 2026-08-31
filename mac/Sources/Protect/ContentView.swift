@@ -13,6 +13,8 @@ enum Phase { case idle, scanning, done }
     @Published var armed: Set<String> = []
     /// What is on this Mac, found without scanning. Populated on appear.
     @Published var installed: [Installed] = []
+    @Published var exportedTo: URL?
+    @Published var exportError: String?
     private var timer: Timer?
 
     func detect() {
@@ -44,6 +46,31 @@ enum Phase { case idle, scanning, done }
         }
     }
 
+    /// ⚠️ THE SAVE PANEL IS THE PERMISSION PROMPT. Writing a report full of file
+    /// paths straight into Downloads without asking is the sort of thing this app
+    /// exists to warn people about; the user picks the destination, every time.
+    func export(_ format: ExportFormat) {
+        guard let result else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = exportFilename(format)
+        panel.canCreateDirectories = true
+        panel.title = "Export findings"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            switch format {
+            case .pdf:
+                try PDFReport.write(result, to: url)
+            case .csv:
+                try exportCSV(result).write(to: url, atomically: true, encoding: .utf8)
+            case .markdown:
+                try exportMarkdown(result).write(to: url, atomically: true, encoding: .utf8)
+            }
+            exportedTo = url
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
     func apply(_ finding: Finding) {
         guard let fix = finding.fix else { return }
         Task.detached(priority: .userInitiated) {
@@ -53,10 +80,23 @@ enum Phase { case idle, scanning, done }
     }
 }
 
+/// The bridge for the export menu. NSMenuItem needs an Objective-C target, and a
+/// SwiftUI view is not one.
+@MainActor
+final class ExportTarget: NSObject {
+    weak var model: Model?
+    @objc func pick(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let format = ExportFormat(rawValue: raw) else { return }
+        model?.export(format)
+    }
+}
+
 struct ContentView: View {
     // ⚠️ ONE MODEL, OWNED BY THE DELEGATE. The menu item and the button must
     // drive the same scan; a @StateObject here would give the menu its own.
     @ObservedObject var model: Model
+    private let exportTarget = ExportTarget()
 
     var body: some View {
         ZStack {
@@ -73,7 +113,7 @@ struct ContentView: View {
             ScrollView {
                 content
                     .padding(.horizontal, Space.xxl)
-                    .padding(.bottom, Space.huge)
+                    .padding(.bottom, Space.xl)
             }
             // ⚠️ THE SCROLL VIEW MUST BE CLAMPED TO THE WINDOW, and this line is
             // the whole fix. Without it the scroll view took its content's ideal
@@ -122,7 +162,7 @@ struct ContentView: View {
         VStack(spacing: Space.md) {
             Rectangle().fill(Ink.panelEdge).frame(height: 1)
                 .padding(.bottom, Space.xs)
-            Text("A Templeton Technologies Product")
+            Text("Templeton Protect is a Templeton Technologies product")
                 .font(.system(size: FontSize.caption))
                 .tracking(0.24)
                 .foregroundStyle(Ink.secondary(Dim.faint))
@@ -152,7 +192,7 @@ struct ContentView: View {
             .help("templetontech.com")
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, Space.huge)
+        .padding(.top, Space.xl)
     }
 
     // ── idle ──────────────────────────────────────────────────────────
@@ -163,14 +203,14 @@ struct ContentView: View {
     // has no reason to be an app. This one reads the installations before you
     // press anything, so the first thing on screen is your own Mac.
     private var hero: some View {
-        VStack(alignment: .leading, spacing: Space.huge) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
             HStack(alignment: .top, spacing: Space.huge) {
                 pitch
                 machine
             }
             checks
         }
-        .padding(.vertical, Space.xxl)
+        .padding(.vertical, Space.xl)
     }
 
     /// ⚠️ EVERY CLAIM HERE IS ONE THE ENGINE ACTUALLY MAKES. It is tempting to
@@ -178,6 +218,11 @@ struct ContentView: View {
     /// that overstates what it checks is worse than one that says nothing.
     /// These three are the rules in Scan.swift, in the user's words.
     private var checks: some View {
+        // ⚠️ EQUAL HEIGHTS, and it takes both halves of this. maxHeight makes each
+        // card fill whatever the row is; fixedSize makes the row exactly as tall
+        // as its tallest card. With only the first, the row collapses; with only
+        // the second, the cards keep their own ragged heights, which is what they
+        // did — three panels of three different sizes.
         HStack(alignment: .top, spacing: Space.md) {
             check("key.horizontal.fill", "Keys in your chat history",
                   "Anthropic, OpenAI, GitHub, Google, Slack and GitLab keys, left behind in conversation logs.")
@@ -186,6 +231,7 @@ struct ContentView: View {
             check("wifi.slash", "Nothing leaves this Mac",
                   "The scan is local, and anything it shows you has the secret itself blanked out first.")
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func check(_ icon: String, _ title: String, _ body: String) -> some View {
@@ -203,7 +249,7 @@ struct ContentView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentSurface(radius: Radius.card)
     }
 
@@ -252,11 +298,13 @@ struct ContentView: View {
                     .font(.system(size: FontSize.caption, weight: .semibold)).tracking(1.4)
                     .foregroundStyle(Ink.secondary(Dim.faint))
                 Spacer()
-                if !model.installed.isEmpty {
-                    Text("\(model.installed.count)")
-                        .font(.system(size: FontSize.caption, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Ink.accent).monospacedDigit()
-                }
+                // ⚠️ A BARE COLUMN OF NUMBERS MEANS NOTHING. "2,289" next to
+                // Claude Code could be days, sessions, megabytes. The column has
+                // a name now, and the row below says what the scan will do with
+                // them.
+                Text("FILES TO CHECK")
+                    .font(.system(size: FontSize.caption, weight: .semibold)).tracking(1.4)
+                    .foregroundStyle(Ink.secondary(Dim.faint))
             }
             .padding(.horizontal, Space.lg).padding(.top, Space.lg)
 
@@ -292,11 +340,23 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.bottom, Space.xs)
+
+                Text(installedFooter)
+                    .font(.system(size: FontSize.caption))
+                    .foregroundStyle(Ink.secondary(Dim.faint))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Space.lg)
+                    .padding(.top, Space.sm).padding(.bottom, Space.lg)
             }
         }
         .frame(width: 320)
         .contentSurface(radius: Radius.panel)
+    }
+
+    private var installedFooter: String {
+        let total = model.installed.reduce(0) { $0 + $1.files }
+        let capped = model.installed.contains { $0.atLeast }
+        return "About \(total.formatted())\(capped ? "+" : "") files in these folders. The scan reads the ones that can hold a key — logs, configs and transcripts — and skips the rest."
     }
 
     // ── header once scanning or done ──────────────────────────────────
@@ -326,6 +386,49 @@ struct ContentView: View {
                 }
             }
             Spacer()
+
+            if model.result != nil {
+                // ⚠️ AN AppKit MENU, NOT SwiftUI's. SwiftUI's Menu painted over
+                // both the champagne background and the navy text, so the only
+                // control on the screen came out as plain white text on the
+                // aurora; the styles that fix that need macOS 13 and this app
+                // still runs on 12. NSMenu takes the styling as given.
+                Button {
+                    let menu = NSMenu()
+                    for format in ExportFormat.allCases {
+                        let item = NSMenuItem(title: format.label,
+                                              action: #selector(ExportTarget.pick(_:)), keyEquivalent: "")
+                        item.target = exportTarget
+                        item.representedObject = format.rawValue
+                        menu.addItem(item)
+                    }
+                    exportTarget.model = model
+                    // ⚠️ THE FALLBACK IS THE POINT. popUpContextMenu needs a
+                    // current event, and if there is none the button does
+                    // nothing at all — a control that silently refuses to work
+                    // is the worst failure a button can have.
+                    if let view = NSApp.keyWindow?.contentView {
+                        if let event = NSApp.currentEvent {
+                            NSMenu.popUpContextMenu(menu, with: event, for: view)
+                        } else {
+                            menu.popUp(positioning: nil,
+                                       at: view.convert(NSEvent.mouseLocation, from: nil),
+                                       in: view)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: Space.sm) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Export findings")
+                    }
+                    .font(.system(size: FontSize.small, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Palette.navy)
+                    .padding(.horizontal, Space.lg).padding(.vertical, Space.md)
+                    .primaryAction()
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
         }
     }
 

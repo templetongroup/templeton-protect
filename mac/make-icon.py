@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Protect's Dock icon: Dusty Rose body, white swirl.
+"""Protect's Dock icon: Champagne body, Midnight Navy swirl.
 
 ⚠️ NOT A NAVY BODY — that is Radiant's icon in a different blue, and side by
 side in the Dock the two were indistinguishable. The mark is shared on purpose;
-the body colour is what separates the family members. Tony picked rose.
+the body colour is what separates the family members. Tony picked champagne
+with the navy swirl — the strongest contrast pair in the palette, and it reads
+at 16pt in the menu bar as well as at 1024.
 
 ⚠️ THE SWIRL IS LIFTED, NEVER RE-RENDERED. Radiant's icon was once rebuilt by
 re-drawing the mark through a blur/threshold pass whose radius scaled with the
@@ -23,8 +25,8 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 CANVAS = 1024
-ROSE = (237, 166, 163)              # #EDA6A3  the body
-WHITE = (255, 255, 255)             #           the swirl
+CHAMPAGNE = (247, 215, 148)         # #F7D794  the body
+NAVY = (25, 42, 86)                 # #192A56  the swirl
 BODY = int(round(0.896 * CANVAS))
 MARK = 694
 
@@ -65,9 +67,9 @@ def main() -> None:
     print(f"  lifted swirl {mark.size[0]}x{mark.size[1]} from {src.name}")
 
     mark = mark.resize((MARK, MARK), Image.LANCZOS)
-    body = Image.new("RGBA", (BODY, BODY), (*ROSE, 255))
+    body = Image.new("RGBA", (BODY, BODY), (*CHAMPAGNE, 255))
     body.putalpha(squircle(BODY))
-    ink = Image.new("RGBA", mark.size, (*WHITE, 255))
+    ink = Image.new("RGBA", mark.size, (*NAVY, 255))
     ink.putalpha(mark)
     body.alpha_composite(ink, ((BODY - MARK) // 2,) * 2)
 
