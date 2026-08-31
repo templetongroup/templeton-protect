@@ -64,10 +64,32 @@ private let codeKeyShapes: [(String, NSRegularExpression)] = [
     ("SendGrid", try! NSRegularExpression(pattern: #"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b"#)),
     ("Twilio", try! NSRegularExpression(pattern: #"\bSK[0-9a-fA-F]{32}\b"#)),
     ("npm", try! NSRegularExpression(pattern: #"\bnpm_[A-Za-z0-9]{36}\b"#)),
-    ("a private key file", try! NSRegularExpression(pattern: #"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"#)),
 ]
 
-private let codeKeyHints = ["AKIA", "ASIA", "sk_live_", "SG.", "npm_", "BEGIN", "SK"]
+/**
+ A PEM private key, header **and** body.
+
+ ⚠️ NOT IN THE VENDOR LIST, AND NOT THE HEADER ALONE. It was both, and it cost
+ two things at once. The header on its own matches prose: this project's own
+ `NOTES.md` explains the PEM handling, and the scanner reported that sentence as
+ a **critical** credential leak — the exact class of false positive the rest of
+ this file exists to avoid, at the top of the report.
+
+ It also read wrong even when it was right. Sitting in the vendor list, its name
+ was substituted into a title built for issuers, producing "a private key file
+ credential written into the code". A key with no issuer needs its own sentence.
+
+ Requiring forty characters of base64 after the header is what separates a key
+ from a sentence about keys.
+ */
+private let pemPrivateKey = try! NSRegularExpression(
+    pattern: #"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\r\n\s]*(?:[A-Za-z-]+:.*[\r\n]+)*[A-Za-z0-9+/=]{40,}"#)
+
+func holdsPrivateKey(_ text: String) -> Bool {
+    pemPrivateKey.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+}
+
+private let codeKeyHints = ["AKIA", "ASIA", "sk_live_", "SG.", "npm_", "SK"]
 
 /**
  The shapes `redactKeys` will rewrite in place.
@@ -111,9 +133,34 @@ struct CodeSmell {
     let pattern: NSRegularExpression
     /// Cheap substring that decides whether the regex runs at all.
     let hint: String
+    /**
+     File extensions this rule means anything in.
+
+     ⚠️ WITHOUT THIS, THE SCANNER READS ITS OWN DOCUMENTATION AND REPORTS IT.
+     Three false positives in a row came from the same place and only this fixes
+     the class: `NOTES.md` explaining that a bundle contains `eval(str)`, this
+     file's own comment saying the same, and a paragraph about PEM handling
+     reported as a critical credential leak. Prose about code is not code —
+     Markdown does not execute, and Swift has no `eval`.
+
+     Keys are still read out of every file type, because a key pasted into a
+     README is a leaked key. It is only the *pattern* rules that need to know
+     which language they are looking at.
+     */
     let plain: String
     let remedy: String
+    let languages: Set<String>
 }
+
+/// The scripting languages where turning a string into code, or into a shell
+/// command, is a thing that happens.
+private let scripting: Set<String> = ["js", "jsx", "ts", "tsx", "mjs", "cjs",
+                                      "vue", "svelte", "astro", "py", "rb", "php"]
+/// Anywhere a query gets assembled.
+private let queryHosts: Set<String> = scripting.union(["java", "kt", "go", "cs", "swift", "scala", "sql"])
+/// Anywhere a request gets configured, including shell scripts and CI files.
+private let requestHosts: Set<String> = queryHosts.union(
+    ["sh", "bash", "zsh", "fish", "yaml", "yml", "toml", "json", "conf", "cfg", "ini", "tf"])
 
 /// ⚠️ SHORT, AND EVERY ENTRY EARNS ITS PLACE. The temptation with this list is
 /// to grow it to a hundred patterns so the product looks thorough; what that
@@ -133,7 +180,8 @@ private let codeSmells: [CodeSmell] = [
         pattern: try! NSRegularExpression(pattern: #"(rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|verify\s*=\s*False|InsecureSkipVerify\s*:\s*true|\b(?:curl|wget)\b[^\n]{0,80}\s(?:-k|--insecure|--no-check-certificate)\b)"#),
         hint: "",
         plain: "This code connects over HTTPS and then tells it not to check who is on the other end. Anyone positioned between this program and the server it is calling can read and change everything that passes — which is the entire thing HTTPS was there to prevent. It is almost always added to get past a certificate error on a developer's machine and then never taken out.",
-        remedy: "Remove the flag. If a self-signed certificate is genuinely needed, trust that one certificate rather than turning the check off."),
+        remedy: "Remove the flag. If a self-signed certificate is genuinely needed, trust that one certificate rather than turning the check off.",
+        languages: requestHosts),
     CodeSmell(
         rule: "shell-injection-shape",
         title: "A shell command built out of a variable",
@@ -141,7 +189,8 @@ private let codeSmells: [CodeSmell] = [
         pattern: try! NSRegularExpression(pattern: #"(exec(Sync)?\s*\(\s*[`"'][^`"')]*\$\{|os\.system\s*\(\s*f?["'][^"')]*[\{%]|subprocess\.[A-Za-z_]+\([^)]*shell\s*=\s*True)"#),
         hint: "",
         plain: "A command line is being assembled by pasting a value into a string, then handed to a shell. If that value ever comes from outside — a form, a filename, an API response, or an AI assistant's output — whoever supplies it can append their own command and it runs with this program's permissions.",
-        remedy: "Pass the arguments as a list instead of a string, so the shell never parses them. In Node that is execFile or spawn; in Python it is subprocess.run([...]) without shell=True."),
+        remedy: "Pass the arguments as a list instead of a string, so the shell never parses them. In Node that is execFile or spawn; in Python it is subprocess.run([...]) without shell=True.",
+        languages: scripting),
     CodeSmell(
         rule: "sql-string-concatenation",
         title: "A SQL query built by joining strings",
@@ -154,7 +203,8 @@ private let codeSmells: [CodeSmell] = [
         pattern: try! NSRegularExpression(pattern: #"(?i)\b(?:select\s+[^;\n]{1,100}?\sfrom\s|insert\s+into\s|update\s+[A-Za-z_][\w.]*\s+set\s|delete\s+from\s)[^;\n]{0,120}?(\+\s*[A-Za-z_$][A-Za-z0-9_$.]*|\$\{[^}]+\}|%\s*\([A-Za-z_]|"\s*\.\s*\$)"#),
         hint: "",
         plain: "Part of this query is a value pasted into the text of the SQL. A value containing a quote mark ends the string early and the rest of it is read as more query — which is how a login form becomes a way to read every row in the database.",
-        remedy: "Use a parameterized query: leave a placeholder in the SQL and pass the value separately, so the database never treats it as instructions."),
+        remedy: "Use a parameterized query: leave a placeholder in the SQL and pass the value separately, so the database never treats it as instructions.",
+        languages: queryHosts),
     CodeSmell(
         rule: "eval-on-a-variable",
         title: "Code is being built and then run",
@@ -166,7 +216,8 @@ private let codeSmells: [CodeSmell] = [
         pattern: try! NSRegularExpression(pattern: #"(\beval\s*\(\s*[A-Za-z_$][A-Za-z0-9_$.]*\s*\)|new\s+Function\s*\(\s*[A-Za-z_$])"#),
         hint: "",
         plain: "A string is turned into running code. Whatever that string contains, this program will do — so anything that can influence the string can make this program run its own code.",
-        remedy: "Parse the value instead of executing it. JSON.parse for data; a lookup table for a choice between known behaviors."),
+        remedy: "Parse the value instead of executing it. JSON.parse for data; a lookup table for a choice between known behaviors.",
+        languages: scripting),
     CodeSmell(
         rule: "git-remote-with-token",
         title: "A password is embedded in a git remote",
@@ -174,7 +225,8 @@ private let codeSmells: [CodeSmell] = [
         pattern: try! NSRegularExpression(pattern: #"https?://[A-Za-z0-9._%-]+:[A-Za-z0-9._%+-]{8,}@"#),
         hint: "@",
         plain: "A URL in this repository carries a username and a password or token in the address itself. URLs end up in logs, in error messages, in shell history and in anything that prints what it is about to fetch, so this credential has almost certainly been copied somewhere nobody is tracking.",
-        remedy: "Take the credential out of the URL and rotate it — assume it is already known. Use a credential helper or an SSH key instead."),
+        remedy: "Take the credential out of the URL and rotate it — assume it is already known. Use a credential helper or an SSH key instead.",
+        languages: requestHosts),
 ]
 
 /**
@@ -345,6 +397,29 @@ public func scanCode(at root: String,
 
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
 
+        // ── a private key written inside another file ──────────────────
+        if !isSecretFile, holdsPrivateKey(text) {
+            findings.append(Finding(
+                rule: "private-key-in-file", layer: "code",
+                severity: reachable ? .critical : .high,
+                title: "A private key is written into this file",
+                where_: display(path),
+                evidence: "a PEM private key block, modes \(chain)"
+                    + (reachable ? " — readable by other accounts" : ""),
+                remedy: "Replace the key at whatever issued it, then load it from a file outside the project or from the environment.",
+                validation: "Re-run the scan; this file should hold no PEM block.",
+                plain: "A private key is pasted into this file rather than kept in one of its own. Whatever it unlocks is available to everyone with a copy of this project, and a key in a source file travels into every clone and every backup of it."
+                    + (reachable ? " Another account on this Mac can open it as well." : ""),
+                verified: true, fix: nil,
+                guidance: NextSteps(title: "Replace it, then keep the next one out of the tree",
+                    steps: [
+                        "Assume this key is known and issue a replacement wherever it came from.",
+                        "Revoke the old one. A key that is replaced but not revoked still opens the door.",
+                        "Keep the new key in a file of its own outside the project, and read its path from an environment variable.",
+                        "If this file has been committed, the key is in the history — see whether `git log -p` reaches it before deciding it is handled.",
+                    ])))
+        }
+
         // ── environment files ──────────────────────────────────────────
         if isEnv {
             let vendors = Array(Set(findCodeKeys(in: text))).sorted()
@@ -456,6 +531,7 @@ public func scanCode(at root: String,
         // loaded it, which makes it worse rather than less interesting.
         if looksGenerated(base, text) { continue }
         for smell in codeSmells {
+            guard smell.languages.contains(ext) else { continue }
             if !smell.hint.isEmpty && !text.contains(smell.hint) { continue }
             let range = NSRange(text.startIndex..., in: text)
             guard let m = smell.pattern.firstMatch(in: text, range: range),

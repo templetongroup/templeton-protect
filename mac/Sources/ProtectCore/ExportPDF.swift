@@ -42,7 +42,20 @@ public enum PDFReport {
     }
 
     public static func write(_ result: ScanResult, to url: URL, on date: Date = Date(),
-                             mark: NSImage? = Bundle.main.image(forResource: "swirl-mark")) throws {
+                             /*
+                              ⚠️ THE 1024px ASSET, NOT THE 256px ONE. There are two
+                              swirls and they are cut for different jobs: `swirl-mark`
+                              is 256px with a softened mask, for the scanning animation
+                              and anywhere it is drawn small; `swirl` is the full 1024px
+                              mark. The watermark is drawn at 460pt — on paper at 300dpi
+                              that is about 1,900 device pixels, so the small asset was
+                              being stretched more than sevenfold and the arcs came out
+                              visibly soft. Tony: "the swirl at the bottom is pixelated."
+                              A PDF is resolution-independent and the raster inside it is
+                              not; the source has to be large enough for the size it is
+                              drawn at, not for the size it looks on screen.
+                              */
+                             mark: NSImage? = Bundle.main.image(forResource: "swirl")) throws {
         let sorted = sortedForReport(result.findings)
         var blocks: [Block] = [
             .title("Templeton Protect"),
@@ -213,6 +226,8 @@ public enum PDFReport {
         // produces exactly nothing, which is what the first version did. Using
         // it as a mask and filling navy is what puts it on the page.
         ctx.saveGState()
+        // The mask is still resampled to the fill box; ask for the good filter.
+        ctx.interpolationQuality = .high
         let size: CGFloat = 460
         let box = CGRect(x: pageSize.width - size * 0.62, y: -size * 0.30, width: size, height: size)
         ctx.clip(to: box, mask: mark)

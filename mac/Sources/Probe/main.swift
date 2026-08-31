@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ProtectCore
 
@@ -51,3 +52,19 @@ for shape in ["sk-ant-", "sk-proj-", "ghp_", "AIza", "AKIA", "glpat-", "xoxb-"] 
     leaked = true
 }
 print(leaked ? "exports: LEAKING" : "exports: clean")
+
+// ⚠️ WRITE THE PDF OUT TOO. It is the one export with real layout and no test,
+// and "the swirl at the bottom is pixelated" is not something a string check
+// finds. Render it and look at it.
+if let out = ProcessInfo.processInfo.environment["PROTECT_EXPORT_DIR"] {
+    try exportCSV(all).write(toFile: out + "/protect.csv", atomically: true, encoding: .utf8)
+    try markdown.write(toFile: out + "/protect.md", atomically: true, encoding: .utf8)
+    // ⚠️ LOAD THE MARK FROM DISK. Probe is not a bundle, so the export's default
+    // `Bundle.main.image(forResource:)` returns nil here and the PDF comes out
+    // with no watermark at all — which is exactly the part that needed looking at.
+    let markPath = "Resources/swirl.png"
+    let mark = NSImage(contentsOfFile: markPath) ?? NSImage(contentsOfFile: "mac/" + markPath)
+    if mark == nil { print("⚠️ no swirl.png found — run Probe from mac/, or the PDF has no watermark") }
+    try PDFReport.write(all, to: URL(fileURLWithPath: out + "/protect.pdf"), mark: mark)
+    print("wrote \(out)/protect.{csv,md,pdf}")
+}

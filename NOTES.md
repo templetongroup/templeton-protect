@@ -99,6 +99,18 @@ kind that makes somebody close the app:**
 - `--insecure` and `exec(Sync)` — matched inside this scanner's own rule list.
   `--insecure` now needs `curl` or `wget` on the same line; the bare `exec(` arm
   is gone.
+- The scanner reading **its own documentation**, three times: `NOTES.md`
+  explaining that a bundle contains `eval(str)`, `Code.swift`'s comment saying
+  the same, and a paragraph about PEM handling reported as a **critical**
+  credential leak at the top of the report. Whack-a-mole was not the fix. Each
+  pattern rule now declares the languages it means anything in — Markdown does
+  not execute and Swift has no `eval` — and keys are still read out of every
+  file type, because a key pasted into a README is a leaked key.
+- A PEM header on its own, matched in prose. The rule now requires forty
+  characters of base64 after it, which is what separates a key from a sentence
+  about keys. It also left the vendor list: sitting there, its name was
+  substituted into a title built for issuers and produced "a private key file
+  credential written into the code". A key with no issuer needs its own sentence.
 - `eval(str)` inside a minified bundle in `.next-verify/`. Adding one more name
   to the skip list only closes the case somebody already hit; generated files are
   detected **by shape** — bytes per line over 400 — and skipped for the pattern
@@ -213,6 +225,19 @@ there is no Swift test target on this machine.
 - The PDF is typeset with CoreText and paginates; headings never end a page. It
   carries the mark as a watermark, a summary band, severity dots in the gutter,
   paths in tinted boxes, and a footer with the page number.
+- ⚠️ **The watermark uses `swirl.png` (1024px), NOT `swirl-mark.png` (256px).**
+  Tony: *"the swirl at the bottom is pixelated."* It is drawn at 460pt, which on
+  paper at 300dpi is about 1,900 device pixels — the small asset was being
+  stretched more than sevenfold. A PDF is resolution-independent and the raster
+  inside it is not, so the source has to be large enough for the size it is
+  *printed* at, not the size it looks on screen. The two swirls are cut
+  differently on purpose (see The icon); the large one is right here and the
+  small one is right for the scanning animation.
+- ⚠️ **`Probe` has to load the mark from disk.** It is not a bundle, so the
+  export's default `Bundle.main.image(forResource:)` returns nil and the PDF
+  comes out with no watermark at all — which is how a first attempt to inspect
+  this found nothing wrong with it. `PROTECT_EXPORT_DIR=/tmp` writes all three
+  formats out.
 - ⚠️ **The print palette is the screen palette darkened.** Champagne is invisible
   on paper and dusty rose is too light to read at 9pt. The darkened set is
   declared once at the top of `ExportPDF.swift` rather than reached for ad hoc.
