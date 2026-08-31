@@ -1,0 +1,4 @@
+mac/.build/
+mac/dist/
+mac/Protect.icns
+node_modules/

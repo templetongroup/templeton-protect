@@ -276,7 +276,25 @@ details.evi .body { font-size: 13px; color: var(--ink-2); margin-top: 7px; displ
   </main>
 
 <script>
-const TOKEN = "__TOKEN__";
+/* ⚠️ NO fetch, NO localhost. The scan and every fix run in Swift and come back
+   through this bridge, so the app ships nothing that listens on a port and
+   nothing that needs a runtime on PATH. Replies arrive base64-encoded because a
+   file path can contain a quote, and pasting JSON into a script is how a
+   filename becomes code. */
+const pending = new Map();
+window.__reply = (ticket, payload) => {
+  const resolve = pending.get(ticket);
+  if (!resolve) return;
+  pending.delete(ticket);
+  resolve(JSON.parse(decodeURIComponent(escape(atob(payload)))));
+};
+function ask(kind, extra = {}) {
+  return new Promise((resolve) => {
+    const ticket = String(Date.now()) + Math.random().toString(36).slice(2);
+    pending.set(ticket, resolve);
+    window.webkit.messageHandlers.protect.postMessage({ kind, ticket, ...extra });
+  });
+}
 const $ = (id) => document.getElementById(id);
 const RING = 640;
 
@@ -313,7 +331,7 @@ $("scan").addEventListener("click", async () => {
 
   let data;
   try {
-    data = await (await fetch("/api/scan")).json();
+    data = await ask("scan");
   } catch {
     data = { findings: [], toolsFound: [], filesRead: 0, error: true };
   }
@@ -423,14 +441,9 @@ async function apply(btn, x, i) {
   btn.textContent = "Working…";
   let out;
   try {
-    const res = await fetch("/api/fix", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: TOKEN, fix: x.fix }),
-    });
-    out = await res.json();
+    out = await ask("fix", { fix: x.fix });
   } catch {
-    out = { ok: false, message: "Could not reach the app." };
+    out = { ok: false, message: "That did not go through." };
   }
   const foot = document.getElementById(`foot-${i}`);
   foot.innerHTML = `<span class="note ${out.ok ? "done" : "failed"}">${out.ok ? "✓ " : "✕ "}${esc(out.message)}</span>`;
