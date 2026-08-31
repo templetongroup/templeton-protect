@@ -12,6 +12,7 @@ wrong and cost real time.
 | Scan rules (TypeScript, the CLI and the tests) | `src/` |
 | Build the app | `mac/build.sh` → `mac/dist/Templeton Protect.app` |
 | Icon generator | `mac/make-icon.py` |
+| Bundled assets (swirl, Templeton mark) | `mac/Resources/`, copied by `build.sh` |
 | Tests | `npm test` (10, TypeScript) |
 
 The Swift and TypeScript rule sets are the same logic written twice. There is no
@@ -45,6 +46,14 @@ radius. Nothing picks a value outside them.
   `NSHostingView`'s default label colour: the one string without an explicit
   colour was the app's own title, and it rendered black on navy. The window is
   `darkAqua` as well, but do not rely on it.
+
+## The footer
+
+"A Templeton Technologies Product" and the mark, linking to templetontech.com —
+the same footer Radiant and AiOS carry, so the three read as one company's
+products. The mark is `mac/Resources/templeton-tech.png`, copied from Radiant's
+`public/templeton-tech.png`; keep them the same file. Opening the link uses
+`NSWorkspace`, not a SwiftUI `Link`.
 
 ## The window
 

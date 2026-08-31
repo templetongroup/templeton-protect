@@ -26,7 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ note: Notification) {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
+            // ⚠️ TALL ENOUGH FOR THE WHOLE OPENING SCREEN. At 720 the footer fell below
+            // the fold on first launch, so the first thing a new user saw was a
+            // page that had already been cut off.
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "Templeton Protect"

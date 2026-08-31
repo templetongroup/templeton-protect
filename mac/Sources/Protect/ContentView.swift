@@ -99,15 +99,60 @@ struct ContentView: View {
 
     @ViewBuilder private var content: some View {
         if model.phase == .idle {
-            hero.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity)
-        } else {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                compactHeader
-                if let r = model.result { summary(r); findings(r) }
+            VStack(spacing: 0) {
+                hero.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity)
+                madeBy
             }
-            .frame(maxWidth: 720, alignment: .leading)
-            .frame(maxWidth: .infinity)
+        } else {
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: Space.xl) {
+                    compactHeader
+                    if let r = model.result { summary(r); findings(r) }
+                }
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity)
+                madeBy
+            }
         }
+    }
+
+    /// The same footer Radiant and AiOS carry, so the three read as one company's
+    /// products rather than three unrelated apps.
+    private var madeBy: some View {
+        VStack(spacing: Space.md) {
+            Rectangle().fill(Ink.panelEdge).frame(height: 1)
+                .padding(.bottom, Space.xs)
+            Text("A Templeton Technologies Product")
+                .font(.system(size: FontSize.caption))
+                .tracking(0.24)
+                .foregroundStyle(Ink.secondary(Dim.faint))
+            Button {
+                // ⚠️ NSWorkspace, not a SwiftUI Link. The app is assembled by hand
+                // rather than by Xcode, and opening a URL is the one thing here
+                // that leaves the process — do it through the API that always
+                // hands off to the browser.
+                if let url = URL(string: "https://templetontech.com") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                if let logo = Bundle.main.image(forResource: "templeton-tech") {
+                    Image(nsImage: logo)
+                        .resizable().scaledToFit()
+                        .frame(width: 220)
+                        .opacity(Dim.strong)
+                } else {
+                    // The mark is a bundled asset, so this should not happen —
+                    // but a footer that silently vanishes is worse than a word.
+                    Text("Templeton Technologies")
+                        .font(.system(size: FontSize.small, weight: .semibold))
+                        .foregroundStyle(Ink.secondary())
+                }
+            }
+            .buttonStyle(.plain)
+            .help("templetontech.com")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Space.huge)
     }
 
     // ── idle ──────────────────────────────────────────────────────────
