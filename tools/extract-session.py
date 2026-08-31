@@ -34,6 +34,13 @@ def main():
     ap.add_argument("--from", dest="mark", default=DEFAULT_MARK)
     ap.add_argument("--out-dir", default=PROJECT)
     ap.add_argument("--session-id", default=None)
+    # ⚠️ THE OTHER HALF HAS TO GO SOMEWHERE TOO. Switching a session's working
+    # directory moves the whole transcript to the new project — so the AiOS half
+    # of this conversation disappeared from the AiOS project the moment Protect
+    # got its own folder. --head writes everything BEFORE the marker, which is
+    # how that history gets put back where it belongs.
+    ap.add_argument("--head", action="store_true",
+                    help="keep everything before the marker instead of after it")
     args = ap.parse_args()
 
     lines = []
@@ -53,14 +60,19 @@ def main():
     if start is None:
         sys.exit(f"never found a user turn containing {args.mark!r} — nothing written")
 
-    sid = args.session_id or str(uuid.uuid5(uuid.NAMESPACE_URL, args.source + "|" + args.mark))
+    # ⚠️ THE HALVES MUST NOT SHARE AN ID. Seeded only on source and marker, head
+    # and tail came out with the same session id — two different conversations
+    # claiming to be the same one.
+    seed = f"{args.source}|{args.mark}|{'head' if args.head else 'tail'}"
+    sid = args.session_id or str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
     os.makedirs(args.out_dir, exist_ok=True)
     out = os.path.join(args.out_dir, sid + ".jsonl")
 
+    chunk = lines[:start] if args.head else lines[start:]
     kept = 0
     with open(out, "w") as w:
         first = True
-        for line in lines[start:]:
+        for line in chunk:
             try:
                 d = json.loads(line)
             except Exception:
@@ -76,7 +88,7 @@ def main():
             w.write(json.dumps(d) + "\n")
             kept += 1
 
-    print(f"  cut at line {start + 1} of {len(lines):,}")
+    print(f"  cut at line {start + 1} of {len(lines):,} ({'head' if args.head else 'tail'})")
     print(f"  kept {kept:,} entries → {out}")
     print(f"  {os.path.getsize(out) / 1e6:.1f} MB (source was {os.path.getsize(args.source) / 1e6:.1f} MB)")
 

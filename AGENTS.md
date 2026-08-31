@@ -70,6 +70,14 @@ the result reads as a conversation that starts there rather than a truncated one
 is open, so an extract taken mid-session stops where it was taken. It overwrites
 its output rather than appending.
 
+⚠️ **Switching a session's working directory moves its whole transcript** to the
+new project folder — the AiOS half of that conversation vanished from the AiOS
+project the moment Protect got its own. `--head` writes everything *before* the
+marker, which is how that history goes back where it belongs:
+
+    python3 tools/extract-session.py <session>.jsonl --head \
+      --out-dir ~/.claude/projects/-Users-tonyricciardi-Projects-aios-claude
+
 ### Tracking
 
 Linear, team **The Templeton Group**, project **Templeton Protect**. Linear is
