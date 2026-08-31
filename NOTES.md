@@ -47,6 +47,29 @@ radius. Nothing picks a value outside them.
   colour was the app's own title, and it rendered black on navy. The window is
   `darkAqua` as well, but do not rely on it.
 
+## The scanning screen
+
+`mac/Sources/Protect/Scanning.swift`, fed by `ScanProgress` from the scanner. The
+stage being read expands and carries the live detail; finished stages collapse to
+a tile holding their result; queued ones sit quiet. The layout moving *is* the
+progress indicator — there is no percentage, because the scanner cannot know the
+total before it walks the tree, and a fake percentage is worse than none.
+
+- ⚠️ **The progress callback is throttled to 12/second.** It fires once per file
+  read — thousands of times — and publishing every one repaints the window faster
+  than it can draw, starving the scan of the CPU it is asking for.
+- ⚠️ **Cancellation is an `NSLock`-backed flag, not actor-isolated state.** It is
+  polled between files; hopping to the main actor 8,000 times to read a Bool
+  costs more than the work it guards. Proved with `Probe`: cancelling at 300
+  files returns 300 files and 1 finding against 8,121 and 15 for a full run, and
+  keeps what it had found.
+- ⚠️ **Split the display path, do not build a `URL` from it.** The scanner hands
+  over a path beginning `~/`, and `URL(fileURLWithPath:)` resolves that back to
+  `/Users/<name>/…` — so the screen showed the account name in a panel meant to
+  be readable over your shoulder.
+- `contentTransition` needs macOS 13 and this app runs on 12, so it is behind
+  `#available`.
+
 ## Exports
 
 `mac/Sources/ProtectCore/Export.swift` (CSV, Markdown) and `ExportPDF.swift`.

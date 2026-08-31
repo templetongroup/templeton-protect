@@ -13,6 +13,12 @@ enum Phase { case idle, scanning, done }
     @Published var armed: Set<String> = []
     /// What is on this Mac, found without scanning. Populated on appear.
     @Published var installed: [Installed] = []
+    @Published var stages: [Stage] = []
+    @Published var currentFile = ""
+    @Published var currentFolder = ""
+    @Published var filesRead = 0
+    @Published var foundSoFar = 0
+    @Published var stageHeadline = "Reading your AI installations…"
     @Published var exportedTo: URL?
     @Published var exportError: String?
     private var timer: Timer?
@@ -27,23 +33,87 @@ enum Phase { case idle, scanning, done }
         }
     }
 
+    /// ⚠️ NOT AN ACTOR-ISOLATED FLAG. The scan runs on a detached task and polls
+    /// this between files; hopping to the main actor 8,000 times to read a Bool
+    /// would cost more than the scan.
+    private let cancelled = Cancellation()
+
     func scan() {
         guard phase != .scanning else { return }
         phase = .scanning
         elapsed = 0
         outcomes = [:]
         armed = []
+        filesRead = 0
+        foundSoFar = 0
+        currentFile = ""
+        currentFolder = ""
+        cancelled.reset()
+        stages = installed.map { Stage(tool: $0.tool, dir: $0.dir, state: .waiting) }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.elapsed += 1 }
         }
-        Task.detached(priority: .userInitiated) {
-            let r = scanAiInstallations()
+        Task.detached(priority: .userInitiated) { [cancelled] in
+            // ⚠️ THROTTLED, AND ON PURPOSE. The callback fires once per file
+            // read — thousands of times — and publishing every one of them
+            // repaints the window faster than it can draw and starves the scan
+            // of the very CPU it is asking for. Twelve a second is past what
+            // anyone can read anyway.
+            let throttle = Throttle(interval: 1.0 / 12.0)
+            let r = scanAiInstallations(
+                isCancelled: { cancelled.isSet },
+                progress: { p in
+                    let finished = p.finishedTool
+                    if finished == nil && !throttle.ready() { return }
+                    Task { @MainActor [weak self] in self?.absorb(p) }
+                })
             await MainActor.run {
                 self.timer?.invalidate()
+                // A stopped scan keeps what it had found by then; throwing it
+                // away would make Stop feel like a punishment.
                 self.result = r
                 self.phase = .done
             }
         }
+    }
+
+    func cancel() {
+        cancelled.set()
+        stageHeadline = "Stopping…"
+    }
+
+    @MainActor private func absorb(_ p: ScanProgress) {
+        filesRead = p.filesRead
+        foundSoFar = p.findingsSoFar
+        if let finished = p.finishedTool, let n = p.finishedFindings {
+            if let i = stages.firstIndex(where: { $0.tool == finished }) {
+                withAnimation(.easeInOut(duration: 0.28)) { stages[i].state = .done(n) }
+            }
+            return
+        }
+        // ⚠️ THE TILES CAN ARRIVE LATE. Stages are seeded from the pre-scan
+        // detection, and a scan started before that finished — or straight from
+        // the menu — would otherwise run with no tiles at all. Any tool the
+        // progress mentions and the list does not have gets added here.
+        if let i = stages.firstIndex(where: { $0.tool == p.tool }) {
+            if case .waiting = stages[i].state {
+                withAnimation(.easeInOut(duration: 0.28)) { stages[i].state = .running }
+                stageHeadline = "Reading \(p.tool)…"
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.28)) {
+                stages.append(Stage(tool: p.tool, dir: p.tool, state: .running))
+            }
+            stageHeadline = "Reading \(p.tool)…"
+        }
+        // ⚠️ SPLIT THE STRING, DO NOT BUILD A URL. The scanner hands over a
+        // display path beginning "~/", and URL(fileURLWithPath:) resolves that
+        // back to /Users/<name>/… — so the screen showed the absolute path,
+        // complete with the account name, in a panel meant to be shown to
+        // somebody looking over your shoulder.
+        let parts = p.path.split(separator: "/", omittingEmptySubsequences: false)
+        currentFile = String(parts.last ?? "")
+        currentFolder = parts.dropLast().joined(separator: "/")
     }
 
     /// ⚠️ THE SAVE PANEL IS THE PERMISSION PROMPT. Writing a report full of file
@@ -141,6 +211,13 @@ struct ContentView: View {
         if model.phase == .idle {
             VStack(spacing: 0) {
                 hero.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity)
+                madeBy
+            }
+        } else if model.phase == .scanning {
+            VStack(spacing: 0) {
+                ScanningView(model: model)
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 madeBy
             }
         } else {

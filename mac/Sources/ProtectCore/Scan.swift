@@ -138,7 +138,36 @@ func looksSensitive(_ contents: String) -> Bool {
     return re.firstMatch(in: contents, range: NSRange(contents.startIndex..., in: contents)) != nil
 }
 
+/// What the scan is doing right now, for the screen to show while it works.
+///
+/// ⚠️ THE PATH IS THE POINT. A spinner and a percentage tell you a program is
+/// busy; naming the file it is reading tells you it is doing the thing you asked
+/// for, on your machine, and it is the difference between waiting and watching.
+public struct ScanProgress: Sendable {
+    public let tool: String
+    /// Display form, `~/…`, never the absolute path.
+    public let path: String
+    public let filesRead: Int
+    public let findingsSoFar: Int
+    /// Set once a tool is finished, so the screen can collapse it to a result.
+    public let finishedTool: String?
+    public let finishedFindings: Int?
+}
+
 public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult {
+    scanAiInstallations(home: home, isCancelled: { false }, progress: { _ in })
+}
+
+/// - Parameters:
+///   - isCancelled: polled between files. ⚠️ A scan of a working machine reads
+///     8,000 files and takes about half a minute; one that cannot be stopped is
+///     a program that has taken the Mac hostage.
+///   - progress: called on the scanning thread, often. The caller is responsible
+///     for getting it to the main thread and for not redrawing on every single
+///     call — see the throttle in the app's Model.
+public func scanAiInstallations(home: String = NSHomeDirectory(),
+                                isCancelled: () -> Bool,
+                                progress: (ScanProgress) -> Void) -> ScanResult {
     let fm = FileManager.default
     var findings: [Finding] = []
     var tools: [String] = []
@@ -150,6 +179,7 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else { continue }
         tools.append(ai.tool)
+        let findingsAtToolStart = findings.count
 
         // ⚠️ SKIP THE SUBTREE, DO NOT FILTER AFTER WALKING IT. The first version
         // enumerated everything and discarded node_modules afterwards — which on
@@ -163,6 +193,9 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                                          // and .credentials.json are all hidden.
                                          options: []) else { continue }
         while let item = walker.nextObject() as? URL {
+            if isCancelled() {
+                return ScanResult(findings: sortedBySeverity(findings), toolsFound: tools, filesRead: filesRead)
+            }
             let name = item.lastPathComponent
             if name == "node_modules" || name == ".git" || name == "Cache" || name == "caches" {
                 walker.skipDescendants()
@@ -182,6 +215,10 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                   let size = (attrs[FileAttributeKey.size] as? NSNumber)?.intValue, size <= maxRead
             else { continue }
             filesRead += 1
+            progress(ScanProgress(tool: ai.tool,
+                                  path: path.replacingOccurrences(of: home, with: "~"),
+                                  filesRead: filesRead, findingsSoFar: findings.count,
+                                  finishedTool: nil, finishedFindings: nil))
 
             // A transcript only gets decoded if the byte scan found a hint. A
             // config is small and always worth reading — that is where the
@@ -243,10 +280,18 @@ public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult 
                                skill: "implementing-secrets-management-with-vault")
                     : nil))
         }
+
+        progress(ScanProgress(tool: ai.tool, path: "", filesRead: filesRead,
+                              findingsSoFar: findings.count,
+                              finishedTool: ai.tool,
+                              finishedFindings: findings.count - findingsAtToolStart))
     }
 
-    findings.sort { a, b in
+    return ScanResult(findings: sortedBySeverity(findings), toolsFound: tools, filesRead: filesRead)
+}
+
+func sortedBySeverity(_ findings: [Finding]) -> [Finding] {
+    findings.sorted { a, b in
         a.severity.rank != b.severity.rank ? a.severity.rank < b.severity.rank : a.where_ < b.where_
     }
-    return ScanResult(findings: findings, toolsFound: tools, filesRead: filesRead)
 }
