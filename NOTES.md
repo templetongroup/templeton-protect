@@ -148,6 +148,13 @@ installed app when the source was mid-rebuild.
     rm -rf "/Applications/Templeton Protect.app"
     mv "/Applications/.Protect.new" "/Applications/Templeton Protect.app"
 
+⚠️ **A running app keeps its old Dock icon.** Replacing the bundle under a live
+process does not repaint its Dock tile, so a changed icon looks like it did not
+ship — quit and relaunch before deciding the icon is wrong. Verify the bundle
+rather than the Dock:
+
+    iconutil -c iconset "/Applications/Templeton Protect.app/Contents/Resources/Protect.icns" -o /tmp/x.iconset
+
 ## The icon
 
 There are two swirl assets and they are cut differently:
