@@ -75,6 +75,28 @@ the tagline that reaches people who run neither Claude nor Codex. The hardware
 scan is macOS-specific shell-outs and porting it may be duplication for its own
 sake; worth a decision rather than an assumption.
 
+## Releases
+
+Every change to this project ships. Tony, 2026-08-31: *"all updates should
+trigger a new release and should be updated in git and linear."* So finishing a
+change means bump the version, run `mac/release.sh`, swap it into
+`/Applications`, push, and update the issue — not batch and wait. Keep the gates
+though: build, `npm test`, run `Probe`, look at the running app, and let
+`release.sh` do its quarantined-image check.
+
+| Version | What |
+|---|---|
+| 0.1.0 | The installations scan, signed and notarized. TG-285. |
+| 0.2.0 | The three scans, redaction, real next steps. TG-289, TG-290. |
+| 0.2.1 | The PDF watermark, and pattern rules scoped by language. TG-294. |
+
+⚠️ **`570ba25` says "Fixes TG-292" and that is wrong** — TG-292 is a Radiant
+issue about a folder icon, nothing to do with this. The work in that commit is
+**TG-294**. The number was written into the message before the issue was filed
+and Linear assigned a different one; the commit is already pushed and a second
+agent is active on this repo, so it is corrected here rather than by rewriting
+shared history. File the issue first, then write the commit.
+
 ## Open
 
 | What | Where |
