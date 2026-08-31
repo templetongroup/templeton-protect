@@ -6,11 +6,16 @@ its deploy story, its two-tenant split — were being applied to a standalone Ma
 app they do not describe. AiOS lives at `~/Projects/aios` with its own
 `AGENTS.md`. A finding in one is not automatically true in the other.
 
-Start every turn by reading **`NOTES.md`**. It is short and every line is
+Start every turn by reading **`HANDOFF.md`** — where things stand, what is open,
+and what the app is currently getting wrong — then **`NOTES.md`**. It is short and every line is
 something that already went wrong: the decorative view that sized the whole
 window, glass losing its tint when the window is not frontmost, the swirl mask
 floor, the `osascript` call that hangs on an accessibility prompt, and how to
 install without destroying the installed app.
+
+⚠️ **A SECOND AGENT WORKS THIS REPO** from another machine. Run `git log` before
+assuming the Swift and TypeScript rule sets still match, and never revert or
+overwrite its work.
 
 ### What this is
 
