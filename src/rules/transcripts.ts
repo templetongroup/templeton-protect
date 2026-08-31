@@ -78,6 +78,15 @@ export function transcriptFinding(display: string, hits: KeyHit[], reachable: bo
     evidence: `${hits.length} key-shaped value(s) — ${vendors.join(", ")} — in a conversation log${reachable ? ", in a directory other accounts can read" : ""}`,
     remedy: "Rotate those keys, then delete or prune this transcript. Agent history is kept forever by default and nothing rotates it.",
     validation: "Re-run the scan; this file should report no key-shaped values.",
+    plain: `A conversation with an AI assistant was saved to disk, and ${hits.length === 1 ? "a password-like key was" : hits.length + " password-like keys were"} left sitting in it in plain text${reachable ? " — in a folder other accounts on this Mac can read" : ""}. Keys usually end up here because somebody pasted one into the chat, or a command printed one. These logs are kept forever and nothing clears them out.`,
+    fix: {
+      label: "Delete this transcript",
+      describes: `Permanently removes ${display}. You lose that conversation's history. It does NOT rotate the keys — only the service that issued them can do that, and you should treat them as compromised either way.`,
+      kind: "delete-file",
+      target: display,
+      // ⚠️ There is no undo, and the button must carry that weight.
+      destructive: true,
+    },
     // Proved by matching a vendor-specific key shape, with placeholders excluded.
     verified: true,
   };

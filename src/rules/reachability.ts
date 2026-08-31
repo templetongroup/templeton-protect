@@ -87,6 +87,17 @@ export function reachabilityFinding(
     evidence: `file ${octal(mode.fileMode)}, directories ${mode.parents.map(octal).join(" → ")}`,
     remedy: `chmod 600 "${display}"${sensitive ? " — then rotate anything it contained" : ""}`,
     validation: `stat -f '%Lp' "${display}" returns 600`,
+    plain: sensitive
+      ? "Anyone else who uses this Mac — and any program running under another account — can open this file and read the keys inside it. Those keys let them act as you with whatever service issued them."
+      : "Anyone else who uses this Mac can open this file. It holds no passwords, but it does list what your AI assistant is allowed to do without asking, which is useful to somebody trying to misuse it.",
+    fix: {
+      label: "Make it private",
+      describes: `Sets ${display} so only your account can read it (chmod 600). Nothing is deleted and the file keeps working.`,
+      kind: "chmod",
+      target: display,
+      mode: 0o600,
+      destructive: false,
+    },
     // Proved by stat on the whole chain, not inferred from the filename.
     verified: true,
   };

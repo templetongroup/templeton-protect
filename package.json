@@ -4,9 +4,12 @@
   "description": "Scan your AI, then scan your code.",
   "license": "MIT",
   "type": "module",
-  "bin": { "protect": "./src/cli.ts" },
+  "bin": {
+    "protect": "./src/cli.ts"
+  },
   "scripts": {
     "scan": "node --experimental-strip-types src/cli.ts",
-    "test": "node --test --experimental-strip-types \"tests/*.test.mjs\""
+    "test": "node --test --experimental-strip-types \"tests/*.test.mjs\"",
+    "app": "node --experimental-strip-types src/app.ts"
   }
 }

@@ -37,6 +37,39 @@ export interface Finding {
   /** How to confirm the fix worked — the skill's report asks for this, rightly. */
   validation: string;
   /**
+   * The same finding said to somebody who does not work in security.
+   *
+   * ⚠️ NOT A SIMPLIFIED VERSION OF THE TITLE — a different sentence, about
+   * consequences. "file 644" tells a person nothing; "anyone else who uses this
+   * Mac, and any program running under another account, can open this file and
+   * read the keys in it" tells them whether to care.
+   */
+  plain: string;
+  /**
+   * What the app can do about it, or null when only a person can.
+   *
+   * ⚠️ NULL IS AN HONEST AND COMMON ANSWER. Nothing here can rotate an API key
+   * at the vendor, and a button that pretends otherwise is worse than no button.
+   */
+  fix: FixAction | null;
+}
+
+export interface FixAction {
+  /** What the button says. A verb and its object, never "Fix". */
+  label: string;
+  /** What will happen, in full, before anybody presses it. */
+  describes: string;
+  kind: "chmod" | "delete-file";
+  target: string;
+  /** chmod only. */
+  mode?: number;
+  /**
+   * ⚠️ IRREVERSIBLE ACTIONS SAY SO, AND THE UI TREATS THEM DIFFERENTLY. Removing
+   * a transcript cannot be undone, and a person deserves to know that before the
+   * click rather than after.
+   */
+  destructive: boolean;
+  /**
    * ⚠️ TRUE ONLY WHEN A DETERMINISTIC CHECK PROVED IT. A rule that infers from a
    * pattern — a filename that looks like a secrets file, a key-shaped string
    * that might be a placeholder — sets this false, and the report says so.

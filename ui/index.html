@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Templeton Protect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root {
+  --ground: #f6f7f8;
+  --panel: #ffffff;
+  --rail: #0f1b1f;
+  --line: #e4e8ea;
+  --ink: #10181b;
+  --ink-2: #55646b;
+  --ink-3: #8798a0;
+  --brand: #0aa192;
+  --brand-2: #1a6fd4;
+  --brand-3: #6ee0c8;
+  --brand-wash: #e6f2f1;
+  --crit: #c0392f;
+  --high: #c9701c;
+  --low: #5c6f78;
+  --ok: #1d7a52;
+  --shadow: 0 1px 2px rgba(16,24,27,.05), 0 12px 32px -12px rgba(16,24,27,.16);
+  --r: 18px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0b1113;
+    --panel: #131c1f;
+    --rail: #080e10;
+    --line: #223034;
+    --ink: #eaf2f3;
+    --ink-2: #a7b9bf;
+    --ink-3: #74888f;
+    --brand: #34cdb6;
+    --brand-2: #5f9dfa;
+    --brand-3: #8df0dc;
+    --brand-wash: #102a2a;
+    --crit: #f0776b;
+    --high: #e9a95e;
+    --low: #8fa3ac;
+    --ok: #5fc294;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.6);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Public Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, .num { font-family: Outfit, ui-sans-serif, system-ui, sans-serif; }
+
+/* ── rail ─────────────────────────────────────────────── */
+/* ⚠️ A MAC SIDEBAR IS NOT A BLACK SLAB. The first version put near-black
+   against near-white, which reads as an unfinished panel rather than a window
+   chrome. macOS sidebars are translucent and separated by a hairline. */
+.rail {
+  width: 76px;
+  flex: 0 0 76px;
+  background: color-mix(in oklab, var(--panel) 72%, transparent);
+  backdrop-filter: saturate(1.5) blur(18px);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 0;
+  gap: 26px;
+}
+.mark {
+  width: 40px; height: 40px; border-radius: 13px;
+  background: linear-gradient(145deg, var(--brand), var(--brand-2));
+  display: grid; place-items: center;
+  box-shadow: 0 6px 18px -6px rgba(14,124,115,.75);
+}
+.mark svg { width: 21px; height: 21px; }
+.rail-label {
+  font-family: Outfit, sans-serif;
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3); writing-mode: vertical-rl; margin-top: auto;
+}
+
+/* ── stage ────────────────────────────────────────────── */
+.stage {
+  flex: 1; overflow-y: auto; position: relative;
+  display: flex; flex-direction: column;
+}
+/* ⚠️ AMBIENT LIGHT, NOT DECORATION. A flat sheet of #f6f7f8 reads as a document;
+   two soft pools of the brand colour give the window depth and make the orb sit
+   in something rather than on it. Fixed and behind everything, so it never
+   moves with the results list. */
+.stage::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(46rem 30rem at 62% -6%, color-mix(in oklab, var(--brand) 16%, transparent), transparent 70%),
+    radial-gradient(38rem 26rem at 12% 108%, color-mix(in oklab, var(--brand-2) 13%, transparent), transparent 72%);
+}
+.inner { position: relative; z-index: 1; width: 100%; max-width: 680px; margin: 0 auto; padding: 40px 32px 64px; }
+/* Before a scan the hero owns the window; afterwards it shrinks and the results
+   take over. The state change is the layout, not just new content. */
+body.idle .inner { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding-bottom: 40px; }
+body.idle .head, body.idle .sub { text-align: center; justify-content: center; }
+/* ⚠️ ONCE THERE ARE RESULTS, THE RESULTS ARE THE PAGE. Leaving a 216px button
+   above the fold pushes the findings — the entire reason somebody opened this —
+   below it. The orb shrinks and steps aside rather than disappearing, so
+   re-scanning is still one obvious click. */
+body:not(.idle) .hero { flex-direction: row; align-items: center; gap: 20px; padding: 18px 0 6px; text-align: left; }
+body:not(.idle) .orb { width: 96px; height: 96px; flex: 0 0 96px; }
+body:not(.idle) .orb-face { inset: 7px; }
+body:not(.idle) .orb-text { font-size: 12.5px; }
+body:not(.idle) .ring { display: none; }
+body:not(.idle) .hero p { text-align: left; font-size: 13.5px; }
+
+.head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+h1 { font-size: 25px; font-weight: 600; letter-spacing: -.02em; }
+.sub { color: var(--ink-2); font-size: 14.5px; }
+
+/* ── hero ─────────────────────────────────────────────── */
+.hero { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 34px 0 22px; }
+.orb {
+  position: relative; width: 216px; height: 216px; border: 0; padding: 0;
+  border-radius: 50%; cursor: pointer; background: transparent;
+  display: grid; place-items: center;
+}
+.orb::after {
+  content: ""; position: absolute; inset: -14px; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in oklab, var(--brand) 22%, transparent), transparent 66%);
+  filter: blur(10px); pointer-events: none; z-index: -1;
+}
+.orb-face {
+  position: absolute; inset: 14px; border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in oklab, var(--brand-3) 88%, transparent), transparent 52%),
+    linear-gradient(155deg, var(--brand) 6%, var(--brand-2) 96%);
+  box-shadow:
+    0 22px 52px -16px color-mix(in oklab, var(--brand) 62%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.42);
+  transition: transform .35s cubic-bezier(.2,.8,.3,1), box-shadow .35s;
+}
+/* A slow breath while idle, so the button reads as the thing to press. */
+body.idle .orb-face { animation: breathe 5.5s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.022); }
+}
+@media (prefers-reduced-motion: reduce) { body.idle .orb-face { animation: none; } }
+.orb:hover .orb-face { transform: scale(1.045); animation: none; }
+.orb:active .orb-face { transform: scale(.985); }
+.orb:focus-visible { outline: 3px solid var(--brand); outline-offset: 6px; }
+.orb-text {
+  position: relative; color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.22); font-family: Outfit, sans-serif;
+  font-size: 20px; font-weight: 600; letter-spacing: .015em;
+}
+.ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 3; stroke-linecap: round; }
+/* The track is scaffolding for the progress arc — showing it at rest draws a
+   hard ring around the button for no reason. */
+.ring .track { stroke: var(--line); opacity: 0; transition: opacity .3s; }
+body:not(.idle) .ring .track { opacity: 1; }
+.ring .live {
+  stroke: var(--brand);
+  stroke-dasharray: 640; stroke-dashoffset: 640;
+  transition: stroke-dashoffset .4s ease;
+}
+.hero p { color: var(--ink-2); text-align: center; max-width: 30rem; }
+
+/* ── summary ──────────────────────────────────────────── */
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 26px 0 22px; }
+.tile {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 16px 18px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.tile .num { font-size: 30px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile .cap { font-size: 12px; color: var(--ink-3); letter-spacing: .04em; text-transform: uppercase; }
+.tile.crit .num { color: var(--crit); }
+.tile.high .num { color: var(--high); }
+.tile.low  .num { color: var(--low); }
+
+/* ── findings ─────────────────────────────────────────── */
+.list { display: flex; flex-direction: column; gap: 12px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--shadow); overflow: hidden;
+  animation: rise .45s cubic-bezier(.2,.8,.3,1) both;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; } .orb-face { transition: none; } }
+.card-top { display: flex; gap: 14px; padding: 17px 19px; align-items: flex-start; }
+.dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 8px; flex: 0 0 9px; }
+.dot.critical { background: var(--crit); box-shadow: 0 0 0 4px color-mix(in oklab, var(--crit) 18%, transparent); }
+.dot.high { background: var(--high); box-shadow: 0 0 0 4px color-mix(in oklab, var(--high) 18%, transparent); }
+.dot.low  { background: var(--low); }
+.card h3 { font-size: 15.5px; font-weight: 600; letter-spacing: -.008em; }
+.plain { color: var(--ink-2); margin-top: 5px; font-size: 14.5px; }
+.where {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: var(--ink-3); margin-top: 8px;
+  word-break: break-all;
+}
+.card-foot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 19px; border-top: 1px solid var(--line);
+  background: color-mix(in oklab, var(--ground) 55%, transparent);
+}
+button.act {
+  font: 600 13.5px/1 Outfit, sans-serif; cursor: pointer;
+  padding: 10px 15px; border-radius: 11px; border: 1px solid transparent;
+  background: var(--brand); color: #fff; transition: filter .15s, transform .15s;
+}
+button.act:hover { filter: brightness(1.07); }
+button.act:active { transform: translateY(1px); }
+button.act.danger { background: var(--crit); }
+button.act.ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
+button.act:disabled { opacity: .5; cursor: default; transform: none; filter: none; }
+button.act:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.note { font-size: 13px; color: var(--ink-3); }
+.note.done { color: var(--ok); font-weight: 600; }
+.note.failed { color: var(--crit); font-weight: 600; }
+details.evi { margin-top: 10px; }
+details.evi summary { font-size: 12.5px; color: var(--ink-3); cursor: pointer; list-style: none; }
+details.evi summary::-webkit-details-marker { display: none; }
+details.evi summary::before { content: "▸ "; }
+details.evi[open] summary::before { content: "▾ "; }
+details.evi .body { font-size: 13px; color: var(--ink-2); margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+.confirm { background: color-mix(in oklab, var(--crit) 8%, transparent); border-top: 1px solid var(--line); padding: 13px 19px; }
+.confirm p { font-size: 13.5px; color: var(--ink-2); margin-bottom: 10px; }
+.clear {
+  text-align: center; padding: 54px 20px; color: var(--ink-2);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.clear .big { font-family: Outfit, sans-serif; font-size: 21px; font-weight: 600; color: var(--ink); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body class="idle">
+  <nav class="rail" aria-label="Templeton Protect">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2.5 4.5 6v6c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/>
+        <path d="m9 12 2.2 2.2L15.5 10"/>
+      </svg>
+    </div>
+    <span class="rail-label">Protect</span>
+  </nav>
+
+  <main class="stage">
+    <div class="inner">
+      <div class="head"><h1>Templeton Protect</h1></div>
+      <p class="sub">Scan your AI, then scan your code.</p>
+
+      <section class="hero" id="hero">
+        <button class="orb" id="scan" aria-label="Start scan">
+          <svg class="ring" viewBox="0 0 216 216" aria-hidden="true">
+            <circle class="track" cx="108" cy="108" r="102"/>
+            <circle class="live" cx="108" cy="108" r="102" id="ring"/>
+          </svg>
+          <span class="orb-face" aria-hidden="true"></span>
+          <span class="orb-text" id="orbText">Scan</span>
+        </button>
+        <p id="heroNote">Checks the AI assistants installed on this Mac for credentials left in conversation logs, and for files other accounts can read. Nothing is changed unless you ask.</p>
+      </section>
+
+      <section id="results" class="hidden" aria-live="polite"></section>
+    </div>
+  </main>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const RING = 640;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+let scanning = false;
+
+$("scan").addEventListener("click", async () => {
+  if (scanning) return;
+  scanning = true;
+  $("orbText").textContent = "Scanning";
+  $("results").classList.add("hidden");
+  document.body.classList.remove("idle");
+  $("heroNote").textContent = "Reading configuration and conversation logs…";
+
+  // The ring fills while the scan runs. It is a real wait, not a fake one —
+  // the scan takes a few seconds on a machine with a lot of history.
+  let progress = 0;
+  const tick = setInterval(() => {
+    progress = Math.min(0.92, progress + 0.035);
+    $("ring").style.strokeDashoffset = String(RING * (1 - progress));
+  }, 90);
+
+  let data;
+  try {
+    data = await (await fetch("/api/scan")).json();
+  } catch {
+    data = { findings: [], toolsFound: [], filesRead: 0, error: true };
+  }
+
+  clearInterval(tick);
+  $("ring").style.strokeDashoffset = "0";
+  await new Promise((r) => setTimeout(r, 320));
+
+  $("orbText").textContent = "Re-scan";
+  $("heroNote").textContent = data.error
+    ? "The scan could not run."
+    : `Checked ${data.filesRead.toLocaleString()} files across ${data.toolsFound.length} AI installation${data.toolsFound.length === 1 ? "" : "s"}: ${data.toolsFound.join(", ")}.`;
+  $("ring").style.strokeDashoffset = String(RING);
+  render(data);
+  scanning = false;
+});
+
+function render(data) {
+  const box = $("results");
+  box.classList.remove("hidden");
+  const f = data.findings || [];
+
+  if (f.length === 0) {
+    box.innerHTML = `<div class="clear">
+      <div class="big">Nothing to worry about</div>
+      <p>No credentials are sitting in your AI conversation logs, and nothing another account could read.</p>
+    </div>`;
+    return;
+  }
+
+  const count = (s) => f.filter((x) => x.severity === s).length;
+  const tiles = `<div class="summary">
+    <div class="tile crit"><span class="num">${count("critical")}</span><span class="cap">Critical</span></div>
+    <div class="tile high"><span class="num">${count("high")}</span><span class="cap">Worth fixing</span></div>
+    <div class="tile low"><span class="num">${count("low") + count("medium")}</span><span class="cap">Minor</span></div>
+  </div>`;
+
+  const cards = f.map((x, i) => `
+    <article class="card" style="animation-delay:${Math.min(i * 45, 400)}ms" data-i="${i}">
+      <div class="card-top">
+        <span class="dot ${esc(x.severity)}" aria-hidden="true"></span>
+        <div style="min-width:0">
+          <h3>${esc(x.title)}</h3>
+          <p class="plain">${esc(x.plain)}</p>
+          <p class="where">${esc(x.where)}</p>
+          <details class="evi">
+            <summary>What was found</summary>
+            <div class="body">
+              <span>${esc(x.evidence)}</span>
+              <span>${x.verified ? "Confirmed by a direct check." : "Pattern match — not confirmed."}</span>
+              <span>Check afterwards: ${esc(x.validation)}</span>
+            </div>
+          </details>
+        </div>
+      </div>
+      ${footFor(x, i)}
+    </article>`).join("");
+
+  box.innerHTML = tiles + `<div class="list">${cards}</div>`;
+  wire(f);
+}
+
+function footFor(x, i) {
+  if (!x.fix) {
+    return `<div class="card-foot"><span class="note">Only you can fix this one — nothing here can do it for you.</span></div>`;
+  }
+  return `<div class="card-foot" id="foot-${i}">
+      <button class="act ${x.fix.destructive ? "danger" : ""}" data-fix="${i}">${esc(x.fix.label)}</button>
+      <span class="note">${esc(x.fix.describes)}</span>
+    </div>`;
+}
+
+function wire(findings) {
+  document.querySelectorAll("[data-fix]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.dataset.fix);
+      const x = findings[i];
+      // ⚠️ A DESTRUCTIVE FIX ASKS FIRST, IN THE CARD. A confirm() dialog is
+      // easy to click past; a step that appears where you were looking is not.
+      if (x.fix.destructive && !btn.dataset.armed) {
+        const foot = document.getElementById(`foot-${i}`);
+        const bar = document.createElement("div");
+        bar.className = "confirm";
+        bar.innerHTML = `<p>${esc(x.fix.describes)}</p>`;
+        const yes = document.createElement("button");
+        yes.className = "act danger";
+        yes.textContent = "Yes, delete it";
+        const no = document.createElement("button");
+        no.className = "act ghost";
+        no.textContent = "Keep it";
+        no.style.marginLeft = "8px";
+        bar.append(yes, no);
+        foot.after(bar);
+        btn.disabled = true;
+        no.onclick = () => { bar.remove(); btn.disabled = false; };
+        yes.onclick = () => { bar.remove(); btn.dataset.armed = "1"; btn.disabled = false; apply(btn, x, i); };
+        return;
+      }
+      apply(btn, x, i);
+    });
+  });
+}
+
+async function apply(btn, x, i) {
+  btn.disabled = true;
+  btn.textContent = "Working…";
+  let out;
+  try {
+    const res = await fetch("/api/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, fix: x.fix }),
+    });
+    out = await res.json();
+  } catch {
+    out = { ok: false, message: "Could not reach the app." };
+  }
+  const foot = document.getElementById(`foot-${i}`);
+  foot.innerHTML = `<span class="note ${out.ok ? "done" : "failed"}">${out.ok ? "✓ " : "✕ "}${esc(out.message)}</span>`;
+}
+</script>
+</body>
+</html>
