@@ -347,8 +347,23 @@ recreate with:
 - ⚠️ **`xattr -cr` before signing.** codesign refuses a bundle carrying resource
   forks or Finder info ("detritus not allowed"), and assets pick those up simply
   by being copied around.
-- ⚠️ **Staple both the app and the disk image.** The ticket on the image lets it
-  open offline; the one inside the app survives being dragged out of the image.
+- ⚠️ **Staple both the app and the disk image — and the ORDER is the whole
+  thing.** The obvious sequence (package → notarize the image → staple both)
+  produces an image whose app carries **no ticket at all**, because the copy
+  inside was taken before the staple happened; `stapler staple "$APP"` afterwards
+  staples the one in `dist/`, not the one a customer drags to Applications. It
+  looks fine — Gatekeeper accepts the app off the mounted image, because the
+  image's own ticket covers it — and what it costs you is exactly the case that
+  ticket was for: the app dragged out and launched where the notary service
+  cannot be reached. Correct order: notarize the **app** (as a zip), staple it,
+  build the image around the stapled copy, sign it, notarize the **image**, staple
+  that. Two submissions; the second is quick because the contents are already
+  notarized. Rebuilding the image invalidates any ticket it had, because a ticket
+  is tied to the hash of the thing it was issued for.
+- ⚠️ **`spctl --assess` on `dist/` proves nothing about the release.** It passed
+  on a build whose packaged app had no ticket. The only check that catches this is
+  mounting a quarantined copy of the image and running `stapler validate` on the
+  app **inside** it; `release.sh` does this on every run now.
 - ⚠️ **Test with the quarantine flag set**, or the test proves nothing:
 
       xattr -w com.apple.quarantine "0083;00000000;Safari;" "Templeton Protect.dmg"
