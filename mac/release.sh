@@ -165,8 +165,19 @@ if [ "$NOTARISE" = "1" ]; then
   MOUNT="$(hdiutil attach "$QT" -nobrowse -readonly | tail -1 | sed 's/.*\(\/Volumes\/.*\)/\1/')"
   spctl --assess --type execute --verbose=4 "$MOUNT/Templeton Protect.app" 2>&1 | sed 's/^/  /'
   xcrun stapler validate "$MOUNT/Templeton Protect.app" 2>&1 | sed 's/^/  /'
-  hdiutil detach "$MOUNT" -quiet
-  rm -rf "$(dirname "$QT")"
+  # ⚠️ DETACH IS FLAKY AND `set -e` MAKES THAT FATAL. The volume is often still
+  # busy for a moment after spctl and stapler have read it, so hdiutil returns
+  # 16 and the whole release dies here — after a perfectly good signed, stapled
+  # disk image exists, but BEFORE the appcast is written. Twice that produced a
+  # valid DMG behind a stale feed, and twice it was misread as something else
+  # (Apple hanging, then a killed process group). Retry, then force, and never
+  # let it end the run.
+  for attempt in 1 2 3 4 5; do
+    hdiutil detach "$MOUNT" -quiet && break
+    sleep 2
+    [ "$attempt" = 5 ] && hdiutil detach "$MOUNT" -force -quiet
+  done || true
+  rm -rf "$(dirname "$QT")" || true
 fi
 
 # ── the appcast: how a copy already out there learns this exists ──────────
