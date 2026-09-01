@@ -424,10 +424,15 @@ struct ContentView: View {
                 }
             } label: {
                 if let logo = Bundle.main.image(forResource: "templeton-tech") {
+                    // ⚠️ A FOOTER MARK IS A SIGNATURE, NOT A BILLBOARD. At 220pt
+                    // it dominated the bottom of the window — Tony: "the templeton
+                    // technologies logo is way to big in the footer." A company
+                    // attribution the same visual weight as the product's own
+                    // content reads as the wrong thing being the subject.
                     Image(nsImage: logo)
                         .resizable().scaledToFit()
-                        .frame(width: 220)
-                        .opacity(Dim.strong)
+                        .frame(width: 132)
+                        .opacity(Dim.muted)
                 } else {
                     // The mark is a bundled asset, so this should not happen —
                     // but a footer that silently vanishes is worse than a word.
