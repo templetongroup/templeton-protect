@@ -664,7 +664,11 @@ struct ContentView: View {
                      larger." Sized against the headline beneath it now, not
                      against the text it replaced.
                      */
-                    .frame(height: 62)
+                    // ⚠️ THE FRAME IS NOT THE MARK. The lockup canvas carries
+                    // padding above and below, so the swirl renders at roughly
+                    // half this height — 100 here puts the mark near 50pt, which
+                    // is the size it needed to stop reading as a caption.
+                    .frame(height: 100)
                     .accessibilityLabel("Templeton Protect")
             } else {
                 Text("TEMPLETON PROTECT")

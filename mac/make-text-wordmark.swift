@@ -145,7 +145,7 @@ func renderLockup(text: String, ink: NSColor, background: NSColor?, size: NSSize
     let inset = size.width * 0.045
     // The swirl and its gap claim a share of the width before the type is fitted,
     // or the type would be measured against room it does not have.
-    let markShare: CGFloat = 0.20
+    let markShare: CGFloat = 0.26
     let available = size.width - inset * 2 - size.width * markShare
     let font = fitted(text, maxWidth: available, tracking: tracking)
     let attrs: [NSAttributedString.Key: Any] = [
@@ -154,8 +154,15 @@ func renderLockup(text: String, ink: NSColor, background: NSColor?, size: NSSize
     let line = NSAttributedString(string: text, attributes: attrs)
     let measured = line.size()
 
-    let markSide = font.capHeight * 1.62
-    let gap = markSide * 0.42
+    /*
+     ⚠️ THE SWIRL OUTWEIGHS THE CAPS, IT DOES NOT MATCH THEM. At 1.62 the mark
+     sat exactly as tall as the letters and read as another glyph in the word —
+     Tony: "swirl should also be larger compared to the text." A lockup wants the
+     mark dominant enough to survive alone at small sizes, so it is 2.4x the cap
+     height and the gap tightens to keep the pair reading as one object.
+     */
+    let markSide = font.capHeight * 2.4
+    let gap = markSide * 0.26
     let total = markSide + gap + measured.width
     let left = (size.width - total) / 2
     let midY = size.height / 2
@@ -192,8 +199,8 @@ for (text, slug, size) in [
 
 print("lockups (swirl + type) →")
 for (text, slug, size) in [
-    ("PROTECT", "lockup-protect", NSSize(width: 1600, height: 420)),
-    ("TEMPLETON PROTECT", "lockup-templeton-protect", NSSize(width: 2000, height: 360)),
+    ("PROTECT", "lockup-protect", NSSize(width: 1600, height: 520)),
+    ("TEMPLETON PROTECT", "lockup-templeton-protect", NSSize(width: 2000, height: 460)),
 ] {
     renderLockup(text: text, ink: champagne, background: nil,
                  size: size, to: brandRoot.appendingPathComponent("\(slug)-champagne-transparent.png"))

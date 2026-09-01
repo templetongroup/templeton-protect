@@ -66,12 +66,12 @@ The text wordmarks above with the champagne swirl set to their left. This is
 what the **app itself** uses in its header (`mac/Resources/protect-lockup.png`
 is a copy of the champagne-on-transparent full-name version).
 
-### `PROTECT` — 1600 × 420
+### `PROTECT` — 1600 × 520
 - `lockup-protect-champagne-transparent.png`
 - `lockup-protect-champagne-on-navy.png`
 - `lockup-protect-navy-transparent.png`
 
-### `TEMPLETON PROTECT` — 2000 × 360
+### `TEMPLETON PROTECT` — 2000 × 460
 - `lockup-templeton-protect-champagne-transparent.png`
 - `lockup-templeton-protect-champagne-on-navy.png`
 - `lockup-templeton-protect-navy-transparent.png`
@@ -90,3 +90,8 @@ beside the other.
 ⚠️ **Never render the lockup as a template image.** It is champagne on
 transparency and the swirl carries the same colour as the type; a template
 rendering mode flattens the two into one silhouette and loses the rings.
+
+⚠️ **The swirl outweighs the caps rather than matching them** — 2.4× the type's
+cap height, with the gap tightened to 0.26 of the mark so the pair still reads as
+one object. At parity the mark sat exactly as tall as the letters and read as
+another glyph in the word rather than as a mark.
