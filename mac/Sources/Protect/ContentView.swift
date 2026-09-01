@@ -656,10 +656,15 @@ struct ContentView: View {
             if let lockup = Bundle.main.image(forResource: "protect-lockup") {
                 Image(nsImage: lockup)
                     .resizable().scaledToFit()
-                    // ⚠️ 34, NOT 26. At the eyebrow's old size the swirl's inner
-                    // rings collapse into a filled dot — the mark stops being the
-                    // mark. This is the smallest height at which they still read.
-                    .frame(height: 34)
+                    /*
+                     ⚠️ THIS IS THE PRODUCT'S NAME, NOT A LABEL ABOVE IT. It
+                     replaced a 12pt letter-spaced eyebrow, so the first attempts
+                     inherited that scale — 26, then 34 — and read as a caption
+                     rather than a logo. Tony, twice: "logo is tiny. needs to be
+                     larger." Sized against the headline beneath it now, not
+                     against the text it replaced.
+                     */
+                    .frame(height: 62)
                     .accessibilityLabel("Templeton Protect")
             } else {
                 Text("TEMPLETON PROTECT")
