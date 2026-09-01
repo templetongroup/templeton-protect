@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ⚠️ Model is @MainActor, so the delegate that owns it must be too — the
     // alternative is a nonisolated init reaching into main-actor state.
     let model = Model()
+    /// The Protect+ layer: menu bar, schedule, transcript watcher. Owned here
+    /// so it outlives the window.
+    var resident: Resident?
 
     // ⚠️ ONE SELECTOR, THREE ITEMS. NSMenuItem needs an Objective-C target and
     // a SwiftUI view is not one, so which scan an item runs travels in its tag
@@ -40,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "Templeton Protect"
+        defer { resident = Resident(model: model); model.resident = { [weak self] in self?.resident } }
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // ⚠️ THE TITLE BAR MUST NOT PAINT. Glass refracts what is behind it, and
@@ -66,7 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+    // ⚠️ CLOSING THE WINDOW MUST NOT KILL THE WATCH. When keep-watch is on the
+    // app lives in the menu bar; quitting is the menu's Quit item, on purpose.
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
+        !(resident?.enabled ?? false)
+    }
 }
 
 // ⚠️ TOP-LEVEL CODE IS NOT ON THE MAIN ACTOR HERE, and the delegate and its

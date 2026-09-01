@@ -38,7 +38,31 @@ enum Phase { case idle, scanning, done }
     @Published var stageHeadline = "Reading your AI installations…"
     @Published var exportedTo: URL?
     @Published var exportError: String?
+    /// What changed since the previous scan of the active kind. Nil on a first
+    /// scan, .isQuiet when nothing moved.
+    @Published var lastDelta: ScanDelta?
+    let history = HistoryStore()
+    /// Reaches the Resident controller owned by the app delegate; a closure so
+    /// the Model does not own the lifecycle.
+    var resident: (() -> Resident?)?
+    /// Mirrors Resident.enabled so SwiftUI sees the change; the Resident owns
+    /// the machinery, this owns the pixels.
+    @Published var keepWatch = UserDefaults.standard.bool(forKey: "keepWatch") {
+        didSet { resident?()?.enabled = keepWatch }
+    }
     private var timer: Timer?
+
+    /// A background (menu bar) scan finished; pick up its results so the window
+    /// agrees with the notification that just fired.
+    func refreshFromHistory() {
+        guard phase != .scanning else { return }
+        for kind in ScanKind.allCases {
+            if let record = history.previous(kind: kind.rawValue) {
+                // Only kinds that have genuinely run — never invent a result.
+                if results[kind] != nil || phase == .done { results[kind] = record.result }
+            }
+        }
+    }
 
     /// Every finding from every scan that has been run, worst first.
     var combined: ScanResult? {
@@ -142,6 +166,10 @@ enum Phase { case idle, scanning, done }
         }
         let folder = codeTarget?.path
         let deep = deepCode
+        // Captured before the hop: HistoryStore is not actor-isolated, and its
+        // writes are distinct timestamped files, so concurrent records cannot
+        // clobber each other.
+        let history = self.history
         Task.detached(priority: .userInitiated) { [cancelled] in
             // ⚠️ THROTTLED, AND ON PURPOSE. The callback fires once per file
             // read — thousands of times — and publishing every one of them
@@ -184,11 +212,13 @@ enum Phase { case idle, scanning, done }
                     r = ScanResult(findings: [], toolsFound: [], filesRead: 0)
                 }
             }
+            let delta = history.record(kind: kind.rawValue, result: r)
             await MainActor.run {
                 self.timer?.invalidate()
                 // A stopped scan keeps what it had found by then; throwing it
                 // away would make Stop feel like a punishment.
                 self.results[kind] = r
+                self.lastDelta = delta
                 self.phase = .done
             }
         }
@@ -364,6 +394,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: Space.xl) {
                     compactHeader
                     runStrip
+                    deltaLine
                     if let r = model.combined { summary(r); findings(r) }
                 }
                 .frame(maxWidth: 720, alignment: .leading)
@@ -425,8 +456,46 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: Space.xxl) {
             pitch
             cards
+            keepWatchRow
         }
         .padding(.vertical, Space.xl)
+    }
+
+    /// The Protect+ row: the resident layer, and the line where the paid
+    /// product starts. The engine above it is open source; this is the part
+    /// that runs on your behalf.
+    private var keepWatchRow: some View {
+        HStack(alignment: .center, spacing: Space.lg) {
+            Image(systemName: model.keepWatch ? "eye.fill" : "eye")
+                .font(.system(size: FontSize.title))
+                .foregroundStyle(model.keepWatch ? Ink.accent : Ink.secondary(Dim.faint))
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack(spacing: Space.sm) {
+                    Text("Keep watch")
+                        .font(.system(size: FontSize.body, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Ink.primary)
+                    Text("PROTECT+")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(Palette.navy)
+                        .padding(.horizontal, Space.sm).padding(.vertical, 2)
+                        .background(Capsule().fill(Ink.accent))
+                }
+                Text(model.keepWatch
+                     ? "Watching from the menu bar: scans re-run on a schedule, and a key written to a conversation log is flagged the moment it lands."
+                     : "Stay in the menu bar, re-run the scans on a schedule, and catch a key the moment it is written to a conversation log — instead of whenever you next press the button.")
+                    .font(.system(size: FontSize.caption))
+                    .foregroundStyle(Ink.secondary(Dim.strong))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Space.lg)
+            Toggle("", isOn: $model.keepWatch)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(Ink.accent)
+        }
+        .padding(Space.lg)
+        .contentSurface(radius: Radius.card)
     }
 
     private var pitch: some View {
@@ -706,6 +775,40 @@ struct ContentView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// "2 new since Tuesday, 3 fixed" — the sentence that makes re-scanning
+    /// worth it. Absent on a first scan, and explicit when nothing moved,
+    /// because silence reads as a broken feature rather than a quiet week.
+    @ViewBuilder private var deltaLine: some View {
+        if let d = model.lastDelta {
+            HStack(spacing: Space.sm) {
+                if d.isQuiet {
+                    Image(systemName: "equal.circle.fill")
+                        .foregroundStyle(Ink.good)
+                    Text("No change since \(relative(d.since)).")
+                        .foregroundStyle(Ink.secondary(Dim.strong))
+                } else {
+                    if !d.new.isEmpty {
+                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(Ink.critical)
+                        Text("\(d.new.count) new since \(relative(d.since))")
+                            .foregroundStyle(Ink.primary)
+                    }
+                    if !d.fixed.isEmpty {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Ink.good)
+                        Text("\(d.fixed.count) fixed")
+                            .foregroundStyle(Ink.secondary(Dim.strong))
+                    }
+                }
+            }
+            .font(.system(size: FontSize.small, weight: .medium))
+        }
+    }
+
+    private func relative(_ date: Date) -> String {
+        let fmt = RelativeDateTimeFormatter()
+        fmt.unitsStyle = .full
+        return fmt.localizedString(for: date, relativeTo: Date())
     }
 
     private func ranSummary(_ r: ScanResult) -> String {

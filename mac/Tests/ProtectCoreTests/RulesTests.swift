@@ -478,3 +478,106 @@ final class HistoryScanTests: XCTestCase {
         XCTAssertTrue(scanGitHistory(at: dir.path).isEmpty)
     }
 }
+
+final class HistoryTests: XCTestCase {
+    var store: HistoryStore!
+    var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-hist-store-\(UUID().uuidString)")
+        store = HistoryStore(directory: dir)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func finding(_ rule: String, _ where_: String) -> Finding {
+        Finding(rule: rule, layer: "machine", severity: .high, title: rule,
+                where_: where_, evidence: "e", remedy: "r", validation: "v",
+                plain: "p", verified: true, fix: nil, guidance: nil)
+    }
+
+    func testFirstScanHasNoDelta() {
+        let r = ScanResult(findings: [finding("a", "x")], toolsFound: ["t"], filesRead: 1)
+        XCTAssertNil(store.record(kind: "machine", result: r))
+    }
+
+    func testDeltaSeesNewAndFixed() {
+        let first = ScanResult(findings: [finding("a", "x"), finding("b", "y")],
+                               toolsFound: ["t"], filesRead: 1)
+        store.record(kind: "machine", result: first)
+        let second = ScanResult(findings: [finding("a", "x"), finding("c", "z")],
+                                toolsFound: ["t"], filesRead: 1)
+        let delta = store.record(kind: "machine", result: second)
+        XCTAssertEqual(delta?.new.map(\.rule), ["c"])
+        XCTAssertEqual(delta?.fixed.map(\.rule), ["b"])
+    }
+
+    /// ⚠️ Compare first, save second — the reverse diffs a scan against itself.
+    func testARepeatScanIsQuietNotEmpty() {
+        let r = ScanResult(findings: [finding("a", "x")], toolsFound: ["t"], filesRead: 1)
+        store.record(kind: "machine", result: r)
+        let delta = store.record(kind: "machine", result: r)
+        XCTAssertNotNil(delta)
+        XCTAssertTrue(delta!.isQuiet)
+    }
+
+    func testRecordsAreClosedToOtherAccounts() throws {
+        let r = ScanResult(findings: [], toolsFound: [], filesRead: 0)
+        store.record(kind: "machine", result: r)
+        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        XCTAssertFalse(files.isEmpty)
+        for f in files {
+            let mode = (try FileManager.default.attributesOfItem(atPath: f.path)[.posixPermissions] as? NSNumber)?.uint16Value
+            XCTAssertEqual(mode, 0o600)
+        }
+    }
+}
+
+final class WatcherTests: XCTestCase {
+    /// The resident claim in one test: a key written to a transcript is
+    /// noticed without anyone pressing anything.
+    func testAKeyWrittenToATranscriptIsNoticed() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-watch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let noticed = expectation(description: "key noticed")
+        var got: [String] = []
+        let watcher = TranscriptWatcher(roots: [dir.path]) { _, vendors in
+            got = vendors
+            noticed.fulfill()
+        }
+        watcher.start()
+        defer { watcher.stop() }
+
+        // Give FSEvents a beat to arm before the write it must see.
+        Thread.sleep(forTimeInterval: 0.5)
+        try #"{"text":"key sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"}"#
+            .write(to: dir.appendingPathComponent("session.jsonl"),
+                   atomically: true, encoding: .utf8)
+
+        wait(for: [noticed], timeout: 10)
+        XCTAssertEqual(got, ["OpenAI"])
+    }
+
+    func testAKeylessWriteIsIgnored() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-watch2-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let fired = expectation(description: "no callback")
+        fired.isInverted = true
+        let watcher = TranscriptWatcher(roots: [dir.path]) { _, _ in fired.fulfill() }
+        watcher.start()
+        defer { watcher.stop() }
+        Thread.sleep(forTimeInterval: 0.5)
+        try "just words\n".write(to: dir.appendingPathComponent("s.jsonl"),
+                                 atomically: true, encoding: .utf8)
+        wait(for: [fired], timeout: 4)
+    }
+}
