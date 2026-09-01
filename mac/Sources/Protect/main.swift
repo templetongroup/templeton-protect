@@ -35,6 +35,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        makeWindow()
+        resident = Resident(model: model, showWindow: { [weak self] in self?.showWindow() })
+        model.resident = { [weak self] in self?.resident }
+        showWindow()
+    }
+
+    /**
+     Bring the window back, from the menu bar or from anywhere else.
+
+     ⚠️ THE DELEGATE OWNS ITS WINDOW; NOBODY REACHES THROUGH `NSApp.windows`.
+     The menu bar's "Open Templeton Protect" used to do
+     `NSApp.windows.first?.makeKeyAndOrderFront(nil)`, and it did nothing at all.
+     Once a status item exists, `NSApp.windows` also holds the status bar's own
+     window, and `.first` is not documented to be the one you meant — so the call
+     raised a 22pt strip in the menu bar and left the real window where it was.
+     Measured, not guessed: after clicking the item, the frontmost application
+     was Preview.
+
+     ⚠️ AND `orderFrontRegardless()` AFTER THE ACTIVATE. `activate` is a request
+     macOS is allowed to refuse — a background app asking for the foreground is
+     exactly the thing recent macOS got stricter about — and a refused activate
+     leaves the window behind whatever is in front of it. That is the "button
+     that silently does nothing" failure this project has a rule against, so the
+     window is ordered front whether or not the app won activation.
+     */
+    func showWindow() {
+        if window == nil { makeWindow() }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    private func makeWindow() {
         window = NSWindow(
             // ⚠️ TALL ENOUGH FOR THE WHOLE OPENING SCREEN. At 720 the footer fell below
             // the fold on first launch, so the first thing a new user saw was a
@@ -43,7 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "Templeton Protect"
-        defer { resident = Resident(model: model); model.resident = { [weak self] in self?.resident } }
+        // ⚠️ A PROGRAMMATIC NSWindow IS RELEASED WHEN CLOSED BY DEFAULT, and this
+        // delegate holds its own strong reference — so the red button handed the
+        // window to AppKit to destroy while `window` still pointed at it. With
+        // keep-watch on, closing the window is a normal thing to do and reopening
+        // it is the whole point of the menu item; the app must still own a window
+        // afterwards.
+        window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // ⚠️ THE TITLE BAR MUST NOT PAINT. Glass refracts what is behind it, and
@@ -66,8 +105,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             """.data(using: .utf8)!)
         }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // ⚠️ CLOSING THE WINDOW MUST NOT KILL THE WATCH. When keep-watch is on the

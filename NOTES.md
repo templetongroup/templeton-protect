@@ -25,6 +25,23 @@ plus `Watcher.swift` and `History.swift` in core so they can be tested, and
 - ⚠️ **Closing the window must not quit when watch is on.**
   `applicationShouldTerminateAfterLastWindowClosed` returns `!resident.enabled`.
   The app lives in the menu bar; Quit is the menu item.
+- ⚠️ **`NSApp.windows.first` IS NOT YOUR WINDOW once a status item exists.**
+  The menu bar's "Open Templeton Protect" did
+  `NSApp.windows.first?.makeKeyAndOrderFront(nil)` and did nothing at all —
+  `NSApp.windows` also holds the status bar's own window and `.first` is not
+  documented to be the one you meant, so the call raised a 22pt strip in the
+  menu bar. Measured rather than guessed: after clicking the item the frontmost
+  application was Preview. The delegate owns its window and exposes
+  `showWindow()`; the Resident holds a closure, never a search.
+- ⚠️ **`activate` is a request, so follow it with `orderFrontRegardless()`.**
+  Recent macOS may refuse a background app's activation, and a refused activate
+  leaves the window behind whatever is in front of it — a button that silently
+  does nothing, which this project has a rule against.
+- ⚠️ **`isReleasedWhenClosed` is true by default for a programmatic NSWindow.**
+  The delegate holds its own strong reference, so the red button handed the
+  window to AppKit to destroy while `window` still pointed at it. With keep-watch
+  on, closing the window is a normal thing to do and reopening it is the entire
+  point of the menu item. Set it false.
 - ⚠️ **`Plan.current` defaults to `.plus` and that is deliberate.** There is no
   store, so gating features behind an impossible purchase is theater. The gate
   makes the boundary visible; flipping the default to `.free` is the launch

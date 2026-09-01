@@ -17,6 +17,9 @@ import UserNotifications
 @MainActor
 final class Resident: NSObject {
     private weak var model: Model?
+    /// Asks the app delegate to bring its window back. A closure, so the
+    /// Resident never has to know how the window is built or find it by guessing.
+    private let showWindow: () -> Void
     private var statusItem: NSStatusItem?
     private var timer: Timer?
     private var watcher: TranscriptWatcher?
@@ -49,8 +52,9 @@ final class Resident: NSObject {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "scanEvery"); apply() }
     }
 
-    init(model: Model) {
+    init(model: Model, showWindow: @escaping () -> Void) {
         self.model = model
+        self.showWindow = showWindow
         super.init()
         apply()
     }
@@ -125,10 +129,7 @@ final class Resident: NSObject {
         item.menu = menu
     }
 
-    @objc private func openClicked() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first?.makeKeyAndOrderFront(nil)
-    }
+    @objc private func openClicked() { showWindow() }
 
     @objc private func cadenceClicked(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
