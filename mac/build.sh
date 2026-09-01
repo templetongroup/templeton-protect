@@ -22,6 +22,21 @@ cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
 
+# ⚠️ SPARKLE IS A FRAMEWORK AND HAS TO TRAVEL INSIDE THE BUNDLE. The binary
+# links it by rpath (@executable_path/../Frameworks, set in Package.swift); with
+# the framework missing the app builds cleanly and then dies at launch with
+# "image not found". Copied with -R to keep the symlinks a framework needs.
+SPARKLE="$(find .build/artifacts -maxdepth 6 -type d -name Sparkle.framework -path '*macos-arm64_x86_64*' | head -1)"
+if [ -n "$SPARKLE" ]; then
+  mkdir -p "$APP/Contents/Frameworks"
+  rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
+  cp -R "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
+else
+  echo "!! Sparkle.framework not found — run: swift package resolve" >&2
+  exit 1
+fi
+
+
 # Ad-hoc signing so Gatekeeper will run it locally. A Developer ID and
 # notarization are needed before it goes to anybody else — see TG-283.
 codesign --force --sign - "$APP" 2>/dev/null || true

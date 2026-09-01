@@ -8,9 +8,26 @@ import PackageDescription
 let package = Package(
     name: "Protect",
     platforms: [.macOS(.v12)],
+    dependencies: [
+        // ⚠️ THE AUDITED STANDARD, NOT A HAND-ROLLED UPDATER. This app asks
+        // people to trust it with the contents of their machine; the one piece
+        // that downloads and replaces the binary is the last place to invent
+        // something. Sparkle verifies an EdDSA signature over the archive and
+        // checks the Developer ID before it swaps anything.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
         .target(name: "ProtectCore", path: "Sources/ProtectCore"),
-        .executableTarget(name: "Protect", dependencies: ["ProtectCore"], path: "Sources/Protect"),
+        .executableTarget(name: "Protect", dependencies: ["ProtectCore", .product(name: "Sparkle", package: "Sparkle")], path: "Sources/Protect",
+                          // ⚠️ THE APP IS HAND-ASSEMBLED, so nothing sets an
+                          // rpath for it. Sparkle ships as a framework that
+                          // lives in Contents/Frameworks; without this the
+                          // binary builds and then dies at launch with "image
+                          // not found".
+                          linkerSettings: [.unsafeFlags([
+                              "-Xlinker", "-rpath",
+                              "-Xlinker", "@executable_path/../Frameworks",
+                          ])]),
         .executableTarget(name: "Probe", dependencies: ["ProtectCore"], path: "Sources/Probe"),
         // The command-line face of the same engine — scan in CI, gate a commit.
         .executableTarget(name: "protect-cli", dependencies: ["ProtectCore"], path: "Sources/CLI"),

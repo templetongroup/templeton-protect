@@ -9,28 +9,34 @@ import Foundation
 // scanner to force an upgrade; the paid thing is genuinely a different thing —
 // it *runs on your behalf* instead of when you press the button.
 //
-// ⚠️ THERE IS NO STORE YET, SO THE DEFAULT IS .plus. Shipping a lock with no
-// door — features gated behind a purchase that cannot be made — would be
-// theater. The gate exists now so the boundary is visible in the product and
-// the codebase from day one; flipping the default to .free is the commercial
-// launch decision, and it belongs to Tony together with the payment rails
-// (licensing server or App Store), not to an agent.
+// ⚠️ THE GATE IS REAL NOW. It used to default to `.plus` for everybody, because
+// there was no store and shipping a lock with no door is theatre. There is a
+// door: a 14-day trial, a licence key from the store, a grace period for when
+// the store is unreachable, and a lapse that switches keeping watch off and says
+// so. See License.swift.
+
 public enum Plan: String {
     case free, plus
 
     public static var current: Plan {
-        // A license file, when the store exists, will be validated here.
-        let url = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Templeton Protect/license.json")
-        if let data = try? Data(contentsOf: url),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let plan = obj["plan"] as? String, plan == "free" {
-            return .free
-        }
-        return .plus
+        Licensing.entitlement().allowsResident ? .plus : .free
     }
 
     /// The resident layer is the paid layer.
     public var includesResident: Bool { self == .plus }
+}
+
+/// Where somebody goes to buy, and to manage what they bought.
+///
+/// ⚠️ THE CHECKOUT LINK IS THE ONE PIECE AN AGENT CANNOT CREATE. It comes from
+/// the store account — Paddle or Lemon Squeezy, chosen 2026-09-01 for merchant-
+/// of-record tax handling — and until that account exists this points at the
+/// product page, which is honest: it tells somebody what Protect+ is and does
+/// not pretend to take their money.
+public enum Store {
+    public static let productPage = "https://www.templetongroup.dev/showcase/protect/"
+    /// Replace with the store's hosted checkout when the account exists (TG-300).
+    public static let checkout = productPage
+    public static let manage = productPage
+    public static let support = "mailto:hello@templetontech.com?subject=Templeton%20Protect"
 }

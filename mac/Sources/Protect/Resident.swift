@@ -101,6 +101,20 @@ final class Resident: NSObject, ObservableObject, UNUserNotificationCenterDelega
                                action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
+
+        // ⚠️ THE MENU BAR IS WHERE A SUBSCRIBER LIVES, so it is where a lapse
+        // has to be visible. Somebody who never opens the window would otherwise
+        // find out that watching stopped by not being told about something.
+        let ent = Licensing.entitlement()
+        let state = NSMenuItem(title: ent.summary, action: nil, keyEquivalent: "")
+        state.isEnabled = false
+        menu.addItem(state)
+        if !ent.allowsResident {
+            let buy = NSMenuItem(title: "Subscribe to Protect+…",
+                                 action: #selector(subscribeClicked), keyEquivalent: "")
+            buy.target = self
+            menu.addItem(buy)
+        }
         menu.addItem(.separator())
 
         let scanNow = NSMenuItem(title: "Scan now", action: #selector(scanNowClicked), keyEquivalent: "")
@@ -120,6 +134,14 @@ final class Resident: NSObject, ObservableObject, UNUserNotificationCenterDelega
         menu.addItem(schedule)
         menu.addItem(.separator())
 
+        // Somebody living in the menu bar may go weeks without opening the
+        // window; the update check has to be reachable from here too.
+        let updates = NSMenuItem(title: "Check for Updates…",
+                                 action: #selector(Updater.checkForUpdates(_:)), keyEquivalent: "")
+        updates.target = Updater.shared
+        menu.addItem(updates)
+        menu.addItem(.separator())
+
         let open = NSMenuItem(title: "Open Templeton Protect", action: #selector(openClicked), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
@@ -130,6 +152,10 @@ final class Resident: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     @objc private func openClicked() { showWindow() }
+
+    @objc private func subscribeClicked() {
+        if let url = URL(string: Store.checkout) { NSWorkspace.shared.open(url) }
+    }
 
     @objc private func cadenceClicked(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,

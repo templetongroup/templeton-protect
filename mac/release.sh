@@ -38,6 +38,21 @@ cp Resources/index.html "$APP/Contents/Resources/index.html"
 cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
+
+# ⚠️ SPARKLE IS A FRAMEWORK AND HAS TO TRAVEL INSIDE THE BUNDLE. The binary
+# links it by rpath (@executable_path/../Frameworks, set in Package.swift); with
+# the framework missing the app builds cleanly and then dies at launch with
+# "image not found". Copied with -R to keep the symlinks a framework needs.
+SPARKLE="$(find .build/artifacts -maxdepth 6 -type d -name Sparkle.framework -path '*macos-arm64_x86_64*' | head -1)"
+if [ -n "$SPARKLE" ]; then
+  mkdir -p "$APP/Contents/Frameworks"
+  rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
+  cp -R "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
+else
+  echo "!! Sparkle.framework not found — run: swift package resolve" >&2
+  exit 1
+fi
+
 lipo -info "$APP/Contents/MacOS/Protect" | sed 's/^/  /'
 
 # ⚠️ STRIP EXTENDED ATTRIBUTES FIRST. codesign refuses a bundle carrying resource
@@ -48,9 +63,31 @@ xattr -cr "$APP"
 echo "▸ signing"
 # --options runtime is the hardened runtime, which notarisation requires.
 # --timestamp gets a trusted timestamp, so the signature outlives the cert.
+# ⚠️ SIGN INSIDE-OUT. Sparkle is not one binary: the framework carries two XPC
+# services, an Autoupdate helper and an Updater.app, and codesign will not reach
+# them by signing the outer bundle. Unsigned nested code is a notarisation
+# rejection at best and, for the component that replaces this app on disk,
+# exactly the thing that must not be left unverified. --deep is Apple's own
+# "do not use this" flag; naming each piece is the supported way.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+  for nested in \
+    "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc" \
+    "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc" \
+    "$SPARKLE_FW/Versions/B/Updater.app" \
+    "$SPARKLE_FW/Versions/B/Autoupdate"; do
+    [ -e "$nested" ] && codesign --force --options runtime --timestamp \
+                                 --sign "$IDENTITY" "$nested"
+  done
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$SPARKLE_FW"
+fi
+
 codesign --force --options runtime --timestamp \
          --sign "$IDENTITY" "$APP"
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/  /'
+# ⚠️ VERIFY THE NESTED CODE TOO, or the first thing you learn about a bad
+# signature is a notary rejection ten minutes later.
+codesign --verify --strict --verbose=2 "$SPARKLE_FW" 2>&1 | sed 's/^/  /'
 
 # ⚠️ NOTARISE THE APP FIRST, THEN BUILD THE IMAGE AROUND THE STAPLED COPY. The
 # obvious order — package, notarise the image, then staple both — silently
@@ -114,6 +151,42 @@ if [ "$NOTARISE" = "1" ]; then
   xcrun stapler validate "$MOUNT/Templeton Protect.app" 2>&1 | sed 's/^/  /'
   hdiutil detach "$MOUNT" -quiet
   rm -rf "$(dirname "$QT")"
+fi
+
+# ── the appcast: how a copy already out there learns this exists ──────────
+#
+# ⚠️ A RELEASE NOBODY CAN RECEIVE IS NOT A RELEASE. Until this step existed,
+# every version reached exactly one Mac — the one with the build tools on it.
+# generate_appcast signs each update with the EdDSA key in the login keychain
+# and writes the XML Sparkle reads; the private key never touches the repo.
+#
+# ⚠️ THE DMG IS 2 MB, WHICH IS WHY THIS CAN BE AUTOMATIC. Radiant's is 163 MB
+# and has to be uploaded by hand to Hostinger because git refuses anything over
+# 100 MB. Protect's rides the repo like any other file, so publishing is a push.
+SITE="${PROTECT_SITE_REPO:-$HOME/Projects/templeton-group-dev-website}"
+PAGE="$SITE/showcase/protect"
+GEN="$(find .build/artifacts -maxdepth 6 -type f -name generate_appcast | head -1)"
+
+if [ -n "$GEN" ] && [ -d "$SITE" ]; then
+  echo "▸ appcast"
+  mkdir -p "$PAGE"
+  # generate_appcast reads a directory of archives and emits appcast.xml beside
+  # them, keeping older entries so somebody two versions behind still updates.
+  STAGE="$(mktemp -d)"
+  cp "$DMG" "$STAGE/"
+  [ -f "$PAGE/appcast.xml" ] && cp "$PAGE/appcast.xml" "$STAGE/appcast.xml"
+  "$GEN" --download-url-prefix "https://www.templetongroup.dev/showcase/protect/" \
+         "$STAGE" 2>&1 | sed 's/^/  /'
+  cp "$STAGE/appcast.xml" "$PAGE/appcast.xml"
+  cp "$DMG" "$PAGE/Templeton Protect.dmg"
+  # The landing page reads this to show the current version without a rebuild.
+  SIZE="$(du -h "$DMG" | cut -f1 | tr -d ' ')"
+  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+  printf '{\n  "version": "%s",\n  "size": "%s"\n}\n' "$VERSION" "$SIZE" > "$PAGE/version.json"
+  rm -rf "$STAGE"
+  echo "  staged $PAGE — commit and push that repo to publish"
+else
+  echo "!! appcast skipped (no generate_appcast, or site repo not at $SITE)" >&2
 fi
 
 echo "▸ done: $DMG"

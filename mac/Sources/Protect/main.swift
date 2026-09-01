@@ -69,10 +69,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeWindow() {
         window = NSWindow(
-            // ⚠️ TALL ENOUGH FOR THE WHOLE OPENING SCREEN. At 720 the footer fell below
-            // the fold on first launch, so the first thing a new user saw was a
-            // page that had already been cut off.
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 860),
+            /*
+             ⚠️ TALL ENOUGH FOR THE WHOLE OPENING SCREEN, AND THIS REGRESSES EVERY
+             TIME A ROW IS ADDED. At 720 the footer fell below the fold on first
+             launch. It happened again at 860 the moment the Keep watch row went
+             in — Tony: "the main window does not show the templeton technologies
+             logo when it opens." The company mark is the last thing on the page,
+             so it is the canary: if it is not visible on open, the window is too
+             short. Measure it in a screenshot after adding anything to the idle
+             screen; do not assume the old number still holds.
+             */
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 1000),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = "Templeton Protect"
@@ -134,6 +141,11 @@ MainActor.assumeIsolated {
     let appItem = NSMenuItem()
     let appMenu = NSMenu()
     appMenu.addItem(withTitle: "About Templeton Protect", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    // ⚠️ IN THE APP MENU WHERE macOS USERS LOOK FOR IT, not buried in settings.
+    let updates = NSMenuItem(title: "Check for Updates…",
+                             action: #selector(Updater.checkForUpdates(_:)), keyEquivalent: "")
+    updates.target = Updater.shared
+    appMenu.addItem(updates)
     appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Hide Templeton Protect", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
     let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

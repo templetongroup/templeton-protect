@@ -95,7 +95,55 @@ func holdsPrivateKey(_ text: String) -> Bool {
     pemPrivateKey.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
 }
 
-private let codeKeyHints = ["AKIA", "ASIA", "sk_live_", "SG.", "npm_", "SK"]
+private let codeKeyHints = ["AKIA", "ASIA", "sk_live_", "SG.", "npm_", "SK", "eyJ"]
+
+/**
+ A JSON Web Token, decoded rather than pattern-matched.
+
+ ⚠️ THE DECODE IS WHAT MAKES THIS SAFE TO SHIP. `eyJ…` three-part strings are
+ everywhere — in test fixtures, in documentation, in expired session logs — and a
+ regex alone would be the noisiest rule in the product. This one base64-decodes
+ the payload, requires it to parse as JSON with real claims, and then **drops
+ anything already expired**: a token whose `exp` has passed is not a credential,
+ it is a string. What survives is a live token, which is worth waking somebody for.
+
+ ⚠️ AND `service_role` IS ITS OWN CATEGORY. A Supabase service-role key bypasses
+ every row-level security policy on the database — it is not "a key", it is the
+ whole database. Naming it separately is the difference between a finding
+ somebody triages next week and one they fix now.
+ */
+private let jwtShape = try! NSRegularExpression(
+    pattern: #"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"#)
+
+private func base64urlDecode(_ s: String) -> Data? {
+    var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    while t.count % 4 != 0 { t += "=" }
+    return Data(base64Encoded: t)
+}
+
+/// The vendors named by any live JWTs in this text.
+func liveJWTs(in text: String) -> [String] {
+    guard text.contains("eyJ") else { return [] }
+    var out: [String] = []
+    let range = NSRange(text.startIndex..., in: text)
+    for m in jwtShape.matches(in: text, range: range) {
+        guard let r = Range(m.range, in: text) else { continue }
+        let parts = String(text[r]).split(separator: ".")
+        guard parts.count == 3,
+              let payload = base64urlDecode(String(parts[1])),
+              let claims = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any]
+        else { continue }
+        // ⚠️ EXPIRED IS NOT LEAKED. Reporting a token that stopped working months
+        // ago is the kind of finding that teaches somebody to skim the list.
+        if let exp = claims["exp"] as? Double, exp < Date().timeIntervalSince1970 { continue }
+        if let role = claims["role"] as? String, role == "service_role" {
+            out.append("a Supabase service-role key")
+        } else if claims["iss"] != nil || claims["sub"] != nil || claims["role"] != nil {
+            out.append("a signed token")
+        }
+    }
+    return out
+}
 
 /**
  The shapes `redactKeys` will rewrite in place.
@@ -150,6 +198,7 @@ func hasConnectionStringLeak(_ text: String) -> Bool {
 func findCodeKeys(in text: String) -> [String] {
     var vendors = findKeys(in: text)
     if hasConnectionStringLeak(text) { vendors.append("Database") }
+    vendors += liveJWTs(in: text)
     let range = NSRange(text.startIndex..., in: text)
     for (vendor, re) in codeKeyShapes {
         guard re.firstMatch(in: text, range: range) != nil else { continue }
@@ -593,6 +642,36 @@ public func scanCode(at root: String,
                             "Create a .env file next to the compose file and move each value into it.",
                             "Replace each value in the compose file with ${THE_VAR_NAME} — compose fills them in automatically.",
                             "Add .env to .gitignore, and check the compose file's history: if it was ever committed with the values in it, rotate them.",
+                        ])))
+            }
+        }
+
+        // ── install scripts that run on npm install ────────────────────
+        //
+        // ⚠️ A postinstall RUNS WITHOUT ANYONE ASKING, on every `npm install`,
+        // with the developer's permissions — which is exactly why it is the
+        // supply-chain attacker's favourite door. Flagged only when it fetches
+        // or evaluates something, because a postinstall that runs `tsc` is
+        // ordinary and reporting it would be noise.
+        if base == "package.json", walker.level <= 2 {
+            let re = try! NSRegularExpression(
+                pattern: #""(?:pre|post)?install"\s*:\s*"([^"]*(?:curl|wget|\bnode\s+-e|\beval\b|base64\s+-d|\|\s*(?:ba|z)?sh)[^"]*)""#)
+            if let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+               let r = Range(m.range(at: 1), in: text) {
+                findings.append(Finding(
+                    rule: "install-script-fetches", layer: "code", severity: .high,
+                    title: "An install script downloads and runs code",
+                    where_: display(path),
+                    evidence: redact(String(text[r]).prefix(90).description),
+                    remedy: "Move the work into a build step somebody runs deliberately, or vendor what it fetches and check it in.",
+                    validation: "No install script in package.json fetches or evaluates code.",
+                    plain: "This runs by itself every time anyone installs the project's dependencies — on your machine, on your colleagues', and in CI — with whatever permissions that person has. It fetches code from the network and runs it, so what executes is whatever that server returns on the day, and nobody reviews it.",
+                    verified: true, fix: nil,
+                    guidance: NextSteps(title: "Take the automatic execution out of it",
+                        steps: [
+                            "Read what the script fetches, and from where. If you cannot say who controls that address, that is the finding.",
+                            "Move it to an explicit script somebody runs on purpose — `npm run setup` rather than a postinstall.",
+                            "If it must stay automatic, vendor the file into the repository and check its checksum instead of fetching it.",
                         ])))
             }
         }

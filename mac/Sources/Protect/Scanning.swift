@@ -100,13 +100,24 @@ struct ScanningView: View {
     }
 
     // ── everything else, done or waiting ──────────────────────────────────
+    /**
+     ⚠️ A ROW THAT NEVER WRAPS BREAKS WORDS INSTEAD. This was an HStack, so six
+     stages divided 720pt into ~110pt each and SwiftUI did the only thing left:
+     split words down the middle. Tony, looking at a real scan: "this formatting
+     is awful. text is jumbled" — above tiles reading "OpenCla / w" and "Agent
+     permissi / ons".
+
+     A grid with a minimum column width wraps to a second row instead of
+     shrinking past legibility, so adding a seventh stage later cannot bring the
+     mid-word breaks back.
+     */
     private var queue: some View {
-        HStack(spacing: Space.md) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Space.md)],
+                  spacing: Space.md) {
             ForEach(model.stages) { stage in
                 stageTile(stage)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private func stageTile(_ stage: Stage) -> some View {
@@ -123,9 +134,15 @@ struct ScanningView: View {
                         .font(.system(size: FontSize.caption))
                         .foregroundStyle(n > 0 ? Ink.critical : Ink.good)
                 }
+                // ⚠️ TRUNCATE, NEVER HYPHENATE OR SPLIT. Even with room, a long
+                // stage name must degrade to an ellipsis rather than a broken word.
                 Text(stage.tool)
                     .font(.system(size: FontSize.small, weight: .medium))
                     .foregroundStyle(isPending(stage) ? Ink.secondary(Dim.faint) : Ink.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             Text(caption(for: stage))

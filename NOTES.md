@@ -74,6 +74,19 @@ plus `Watcher.swift` and `History.swift` in core so they can be tested, and
 
   `didGrant: 0 hasError: 1` arriving a millisecond after the request is a refused
   signature, not a user who said no.
+- ⚠️ **THE FOOTER MARK IS THE CANARY FOR WINDOW HEIGHT.** It is the last thing
+  on the opening screen, so if it is not visible on launch the window is too
+  short. This has regressed twice: at 720 when the page grew, and again at 860
+  the moment the Keep watch row went in — Tony: "the main window does not show
+  the templeton technologies logo when it opens." Now 1000. **Screenshot the
+  window after adding anything to the idle screen**; do not assume the old
+  number still holds.
+- ⚠️ **A ROW THAT NEVER WRAPS BREAKS WORDS.** The scanning stage tiles were an
+  HStack, so six stages divided the width into ~110pt each and SwiftUI split
+  words mid-word — "OpenCla / w", "Agent permissi / ons". Tony: "this formatting
+  is awful. text is jumbled." Use a `LazyVGrid` with a minimum column width so
+  it wraps to a second row, and give the label `lineLimit` +
+  `minimumScaleFactor` so it truncates rather than hyphenates.
 - ⚠️ **`isReleasedWhenClosed` is true by default for a programmatic NSWindow.**
   The delegate holds its own strong reference, so the red button handed the
   window to AppKit to destroy while `window` still pointed at it. With keep-watch
@@ -342,6 +355,46 @@ there is no Swift test target on this machine.
   ink on transparency — right for the screen, and on white paper it produces
   exactly nothing, which is what the first version shipped. Use it as a mask and
   fill navy.
+
+## Updating, and selling
+
+`Updater.swift` (Sparkle), `License.swift` + `Plan.swift` (the trial and the gate),
+`LicenceSheet.swift` (entering a key). The appcast lives at
+`templetongroup.dev/showcase/protect/appcast.xml`; `release.sh` generates and
+signs it and stages the DMG into the site repo.
+
+- ⚠️ **THE UPDATE CHECK IS THE ONLY THING THIS APP SENDS, EVER.** Before Sparkle
+  there was no network client in the binary at all. `SUEnableSystemProfiling` is
+  explicitly false and `SUEnableAutomaticChecks` is deliberately ABSENT, so
+  Sparkle asks before it automates rather than deciding for somebody. If that
+  ever grows a second endpoint, the privacy page has to grow with it.
+- ⚠️ **SIGN SPARKLE INSIDE-OUT.** The framework carries two XPC services, an
+  Autoupdate helper and an Updater.app; signing the outer bundle does not reach
+  them, and unsigned nested code is a notary rejection. `--deep` is Apple's own
+  "do not use this" flag — name each piece.
+- ⚠️ **The rpath is in `Package.swift`.** The app is hand-assembled so nothing
+  sets one; without `@executable_path/../Frameworks` the binary builds cleanly
+  and dies at launch with "image not found".
+- ⚠️ **Protect's DMG rides git; Radiant's does not.** Ours is ~3 MB against
+  Radiant's ~163 MB, so `.gitignore` in the site repo carries an exception for
+  `showcase/protect/*.dmg`. That exception is what makes publishing a push
+  instead of an FTP upload — and Sparkle's appcast points at that exact file.
+- ⚠️ **`.htaccess` must serve `.xml` as XML.** Served as anything else, every
+  installed copy silently stops finding updates. And the site has an SPA
+  fallback, so a missing file returns **200 with the homepage** — verify a
+  deploy by `Content-Type` and byte length, never by status.
+- ⚠️ **Notarising the DMG can outrun a ten-minute command timeout.** `release.sh`
+  in the foreground was killed mid-flight, leaving a stapled app and an
+  unstapled disk image. Run it backgrounded, or finish with `notarytool submit`
+  + `stapler staple` on the DMG alone.
+- ⚠️ **A LAPSED SUBSCRIPTION MUST LOOK LAPSED.** The keep-watch switch read from
+  the stored preference, so a lapsed copy showed the toggle ON beside the words
+  "Keeping watch is off". It reads from the entitlement now. For this product
+  that is not a cosmetic bug: a control that looks like cover and is not is the
+  exact failure the whole thing exists to prevent.
+- The trial is 14 days, and an unreachable store gets a 14-day grace period —
+  cutting a paying customer off because our server was down on a Tuesday is
+  punishing them for our outage. Lapsing never disables scanning.
 
 ## Controls
 

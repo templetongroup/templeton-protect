@@ -50,6 +50,33 @@ enum Phase { case idle, scanning, done }
     /// macOS refused to let this app post notifications. Keep watch still runs
     /// and the menu bar line still reports; the live alert cannot arrive.
     @Published var notificationsBlocked = false
+    /// Trial, subscribed, lapsed. Re-read whenever the window appears, so a
+    /// licence entered elsewhere shows up without a relaunch.
+    @Published var entitlement: Entitlement = Licensing.entitlement()
+    @Published var showingLicenceSheet = false
+    @Published var licenceError: String?
+
+    func refreshEntitlement() { entitlement = Licensing.entitlement() }
+
+    /// ⚠️ SAVED, THEN RE-READ — never trusted because the sheet said so. The
+    /// entitlement always comes from the same function, so there is one answer
+    /// to "is this paid for" rather than two that can disagree.
+    func activate(key: String, email: String?) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 8 else {
+            licenceError = "That does not look like a licence key. Check the email from your purchase."
+            return
+        }
+        do {
+            try Licensing.save(License(key: trimmed, email: email, checked: Date(), expires: nil))
+            licenceError = nil
+            showingLicenceSheet = false
+            refreshEntitlement()
+            resident?()?.apply()
+        } catch {
+            licenceError = "Could not save the licence: \(error.localizedDescription)"
+        }
+    }
     @Published var keepWatch = UserDefaults.standard.bool(forKey: "keepWatch") {
         didSet { resident?()?.enabled = keepWatch }
     }
@@ -383,7 +410,9 @@ struct ContentView: View {
             .padding(.top, Chrome.titleBar)
         }
         .frame(minWidth: 860, minHeight: 580)
+        .sheet(isPresented: $model.showingLicenceSheet) { LicenceSheet(model: model) }
         .onAppear {
+            model.refreshEntitlement()
             model.detect()
             // Lets a screenshot reach the results screen without a click. The
             // app's own layout is the thing being checked, so it has to be the
@@ -436,6 +465,23 @@ struct ContentView: View {
                 .font(.system(size: FontSize.caption))
                 .tracking(0.24)
                 .foregroundStyle(Ink.secondary(Dim.faint))
+
+            // ⚠️ THE VERSION HAS TO BE READABLE WITHOUT THE ABOUT BOX. The first
+            // question any support conversation opens with is "what are you
+            // running", and for a security tool the second is "is it current".
+            // Both answerable from the window somebody already has open.
+            HStack(spacing: Space.sm) {
+                Text("Version \(Updater.currentVersion)")
+                    .font(.system(size: FontSize.caption, design: .monospaced))
+                    .foregroundStyle(Ink.secondary(Dim.faint))
+                Button { Updater.shared.checkForUpdates(nil) } label: {
+                    Text("Check for updates")
+                        .font(.system(size: FontSize.caption, weight: .medium))
+                        .foregroundStyle(Ink.accent.opacity(Dim.strong))
+                }
+                .buttonStyle(.plain)
+                .help("Asks templetongroup.dev whether a newer version exists. Sends only the version you are running.")
+            }
             Button {
                 // ⚠️ NSWorkspace, not a SwiftUI Link. The app is assembled by hand
                 // rather than by Xcode, and opening a URL is the one thing here
@@ -514,8 +560,37 @@ struct ContentView: View {
                     .font(.system(size: FontSize.caption))
                     .foregroundStyle(Ink.secondary(Dim.strong))
                     .fixedSize(horizontal: false, vertical: true)
+                // ⚠️ SAY WHERE THEY STAND, ALWAYS. A trial that runs out silently
+                // is the same failure as a subscription that lapses silently.
+                Text(model.entitlement.summary)
+                    .font(.system(size: FontSize.caption, weight: .medium))
+                    .foregroundStyle(model.entitlement.allowsResident
+                                     ? Ink.secondary(Dim.faint) : Ink.critical)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: Space.lg)
+            // ⚠️ THE UPGRADE PATH LIVES BESIDE THE THING IT UNLOCKS, not on a
+            // separate pricing screen. Until this existed the app said
+            // "PROTECT+" on a feature and offered no way on earth to buy it —
+            // Tony: "where is the area where people can pay to upgrade".
+            if !model.entitlement.allowsResident {
+                Button {
+                    if let url = URL(string: Store.checkout) { NSWorkspace.shared.open(url) }
+                } label: {
+                    Text("Subscribe")
+                        .font(.system(size: FontSize.small, weight: .bold, design: .rounded))
+                        .foregroundStyle(Palette.navy)
+                        .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
+                        .primaryAction()
+                }
+                .buttonStyle(.plain)
+                Button { model.showingLicenceSheet = true } label: {
+                    Text("I have a key")
+                        .font(.system(size: FontSize.caption))
+                        .foregroundStyle(Ink.accent.opacity(Dim.strong))
+                }
+                .buttonStyle(.plain)
+            }
             // ⚠️ DO NOT PROMISE AN ALERT THAT CANNOT ARRIVE. Keep watch still
             // runs with notifications refused — the schedule, the history and the
             // menu bar line all work — but the live alert is the headline of this
@@ -539,10 +614,24 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("macOS is not allowing Templeton Protect to post notifications. Scans and the menu bar still work.")
             }
-            Toggle("", isOn: $model.keepWatch)
+            /*
+             ⚠️ THE SWITCH MUST SHOW WHAT IS TRUE, NOT WHAT WAS ASKED FOR. A
+             lapsed subscriber who had keep-watch on still has the preference
+             set, so the toggle sat in the ON position beside the words "Keeping
+             watch is off". A control that contradicts the sentence next to it is
+             worse than either alone — and for this feature it is the precise
+             failure the product exists to avoid: something that looks like cover
+             and is not. It reads from the entitlement, so it can only be on when
+             watching is actually happening.
+             */
+            Toggle("", isOn: Binding(
+                get: { model.keepWatch && model.entitlement.allowsResident },
+                set: { model.keepWatch = $0 }))
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .tint(Ink.accent)
+                // Without a trial or a licence there is nothing to switch on.
+                .disabled(!model.entitlement.allowsResident)
         }
         .padding(Space.lg)
         .contentSurface(radius: Radius.card)

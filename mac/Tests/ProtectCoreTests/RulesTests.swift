@@ -696,3 +696,75 @@ final class AgentNamingTests: XCTestCase {
         XCTAssertNil(TranscriptWatcher.agent(forPath: "/Users/x/Documents/notes.md", home: home))
     }
 }
+
+final class LicensingTests: XCTestCase {
+    func freshDefaults() -> UserDefaults {
+        let suite = "protect.lic.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        addTeardownBlock { d.removePersistentDomain(forName: suite) }
+        return d
+    }
+
+    override func setUpWithError() throws { try? Licensing.forget() }
+    override func tearDownWithError() throws { try? Licensing.forget() }
+
+    func testAFreshInstallIsInTrial() {
+        let d = freshDefaults()
+        let e = Licensing.entitlement(defaults: d)
+        XCTAssertEqual(e, .trial(daysLeft: 14))
+        XCTAssertTrue(e.allowsResident)
+    }
+
+    func testTheTrialRunsOutAndWatchStops() {
+        let d = freshDefaults()
+        _ = Licensing.firstRun(d)
+        let later = Date().addingTimeInterval(15 * 86_400)
+        let e = Licensing.entitlement(now: later, defaults: d)
+        XCTAssertEqual(e, .trialExpired)
+        XCTAssertFalse(e.allowsResident)
+    }
+
+    func testAFreshLicenceIsSubscribed() throws {
+        try Licensing.save(License(key: "K", email: nil, checked: Date(), expires: nil))
+        XCTAssertEqual(Licensing.entitlement(), .subscribed)
+    }
+
+    /// ⚠️ The store being down is our outage, not the customer's problem.
+    func testAnUnreachableStoreKeepsWatchingThroughGrace() throws {
+        let stale = Date().addingTimeInterval(-5 * 86_400)
+        try Licensing.save(License(key: "K", email: nil, checked: stale, expires: nil))
+        let e = Licensing.entitlement()
+        XCTAssertTrue(e.allowsResident)
+        if case .unverified = e {} else { XCTFail("expected unverified, got \(e)") }
+    }
+
+    func testGraceEventuallyRunsOut() throws {
+        let ancient = Date().addingTimeInterval(-30 * 86_400)
+        try Licensing.save(License(key: "K", email: nil, checked: ancient, expires: nil))
+        XCTAssertEqual(Licensing.entitlement(), .lapsed)
+    }
+
+    func testAnExpiredPeriodLapsesImmediately() throws {
+        try Licensing.save(License(key: "K", email: nil, checked: Date(),
+                                   expires: Date().addingTimeInterval(-86_400)))
+        XCTAssertEqual(Licensing.entitlement(), .lapsed)
+    }
+
+    /// ⚠️ The licence file names a customer. It is not for other accounts.
+    func testTheLicenceFileIsPrivate() throws {
+        try Licensing.save(License(key: "K", email: "a@b.c", checked: Date(), expires: nil))
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Templeton Protect/license.json")
+        let mode = (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.uint16Value
+        XCTAssertEqual(mode, 0o600)
+    }
+
+    /// The whole promise: lapsing never takes the scanner away.
+    func testLapsingNeverDisablesScanning() {
+        XCTAssertFalse(Entitlement.lapsed.allowsResident)
+        XCTAssertFalse(Entitlement.trialExpired.allowsResident)
+        // Scanning is not gated by Plan anywhere — the guard is only in Resident.
+        XCTAssertEqual(Plan.free.includesResident, false)
+        XCTAssertEqual(Plan.plus.includesResident, true)
+    }
+}

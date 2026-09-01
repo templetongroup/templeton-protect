@@ -15,12 +15,18 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.4</string>
+	<string>0.4.2</string>
 	<key>CFBundleVersion</key>
-	<string>8</string>
+	<string>11</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://www.templetongroup.dev/showcase/protect/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>xp9FZx3OYN5NpmFPmxw3AN7HfLPVcXe5+s+xB27QKwM=</string>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
 </dict>
 </plist>
