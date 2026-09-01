@@ -3,6 +3,49 @@
 Read this before changing the Mac app. Every line is something that already went
 wrong and cost real time.
 
+## The resident layer (Protect+)
+
+`mac/Sources/Protect/Resident.swift` — menu bar, schedule, transcript watcher —
+plus `Watcher.swift` and `History.swift` in core so they can be tested, and
+`Plan.swift` for the free/paid gate.
+
+- ⚠️ **FSEvents needs `kFSEventStreamCreateFlagUseCFTypes`.** Without it the
+  callback's `paths` argument is a C `char**`; casting it to `CFArray` is a
+  segfault, not an error. The watcher test died on signal 11 until the flag went
+  in — which is the entire argument for the watcher living in core where a test
+  can reach it. It would have shipped.
+- ⚠️ **Schedule on an hourly due-date check, not a 7-day timer.** A laptop that
+  sleeps through a long timer never fires it; the hourly check runs the scan on
+  the first wake past due, which is what "weekly" means to a machine that closes
+  at night.
+- ⚠️ **HistoryStore compares THEN saves.** Reversed, it diffs a scan against
+  itself and reports eternal "no change" — which reads as safety and is a bug.
+  Records are written 600 under Application Support (700); a security tool whose
+  own memory is world-readable is its own first finding.
+- ⚠️ **Closing the window must not quit when watch is on.**
+  `applicationShouldTerminateAfterLastWindowClosed` returns `!resident.enabled`.
+  The app lives in the menu bar; Quit is the menu item.
+- ⚠️ **`Plan.current` defaults to `.plus` and that is deliberate.** There is no
+  store, so gating features behind an impossible purchase is theater. The gate
+  makes the boundary visible; flipping the default to `.free` is the launch
+  decision, with the payment rails, and it is Tony's not an agent's.
+
+## The agent-permissions audit
+
+`mac/Sources/ProtectCore/Agents.swift`, run as a stage of the installations scan.
+
+- ⚠️ **Evidence names the env variable, never its value.** An MCP config env
+  block is exactly where a live credential sits; quoting it copies the key onto
+  the screen. `looksLikeLiveCredential` decides by name-shape plus the same
+  placeholder test the finder uses, so `${VAR}` passthroughs and "changeme" stay
+  quiet.
+- ⚠️ **The permission allowlist rule is tight on purpose.** `Bash(git status)`
+  is somebody's quieter afternoon and none of our business. Only the unfenced
+  shell (`Bash(*)`) and dangerous wildcards (sudo/rm/curl with a `*`) are flagged.
+- ⚠️ **Blast radius fires only on the combination.** An agent reading what the
+  account reads is how computers work, not a finding. The finding is an unfenced
+  grant AND `~/.ssh`/`~/.aws` on disk — then one sentence says the reach out loud.
+
 ## Where things are
 
 | What | Where |
