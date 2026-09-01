@@ -43,10 +43,35 @@ guard let sourceMark = NSImage(contentsOf: markURL) else {
     fatalError("Could not load \(markURL.path)")
 }
 
+func bitmap(size: NSSize) -> NSBitmapImageRep {
+    let scale: CGFloat = 2
+    guard let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int(size.width * scale),
+        pixelsHigh: Int(size.height * scale),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bitmapFormat: [],
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ) else {
+        fatalError("Could not create a \(Int(size.width * scale)) × \(Int(size.height * scale)) bitmap")
+    }
+    bitmap.size = size
+    return bitmap
+}
+
 func tintedMark(size: NSSize, color: NSColor) -> NSImage {
-    let output = NSImage(size: size)
-    output.lockFocus()
-    NSGraphicsContext.current?.imageInterpolation = .high
+    let markBitmap = bitmap(size: size)
+    guard let context = NSGraphicsContext(bitmapImageRep: markBitmap) else {
+        fatalError("Could not create the mark drawing context")
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
 
     let bounds = NSRect(origin: .zero, size: size)
     color.setFill()
@@ -58,7 +83,11 @@ func tintedMark(size: NSSize, color: NSColor) -> NSImage {
         fraction: 1
     )
 
-    output.unlockFocus()
+    context.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
+
+    let output = NSImage(size: size)
+    output.addRepresentation(markBitmap)
     return output
 }
 
@@ -79,10 +108,17 @@ func fittedFont(for string: String, maxWidth: CGFloat, startingAt start: CGFloat
     return NSFont.systemFont(ofSize: pointSize, weight: .heavy)
 }
 
-func prepareCanvas(size: NSSize, background: NSColor?) -> NSImage {
-    let image = NSImage(size: size)
-    image.lockFocus()
-    NSGraphicsContext.current?.imageInterpolation = .high
+func prepareCanvas(
+    size: NSSize,
+    background: NSColor?
+) -> (bitmap: NSBitmapImageRep, context: NSGraphicsContext) {
+    let canvasBitmap = bitmap(size: size)
+    guard let context = NSGraphicsContext(bitmapImageRep: canvasBitmap) else {
+        fatalError("Could not create the wordmark drawing context")
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
 
     let canvas = NSRect(origin: .zero, size: size)
     NSColor.clear.setFill()
@@ -91,22 +127,18 @@ func prepareCanvas(size: NSSize, background: NSColor?) -> NSImage {
         background.setFill()
         canvas.fill()
     }
-    return image
+    return (canvasBitmap, context)
 }
 
-func write(_ image: NSImage, filename: String) throws {
-    guard
-        let tiff = image.tiffRepresentation,
-        let bitmap = NSBitmapImageRep(data: tiff),
-        let png = bitmap.representation(using: .png, properties: [:])
-    else {
+func write(_ bitmap: NSBitmapImageRep, filename: String) throws {
+    guard let png = bitmap.representation(using: .png, properties: [:]) else {
         fatalError("Could not encode \(filename)")
     }
     try png.write(to: outputURL.appendingPathComponent(filename), options: .atomic)
 }
 
 func writeHorizontal(background: NSColor?, ink: NSColor, filename: String) throws {
-    let image = prepareCanvas(size: horizontalSize, background: background)
+    let surface = prepareCanvas(size: horizontalSize, background: background)
 
     let markSize: CGFloat = 236
     let mark = tintedMark(
@@ -137,8 +169,9 @@ func writeHorizontal(background: NSColor?, ink: NSColor, filename: String) throw
         y: (horizontalSize.height - text.size().height) / 2
     ))
 
-    image.unlockFocus()
-    try write(image, filename: filename)
+    surface.context.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
+    try write(surface.bitmap, filename: filename)
 }
 
 func drawCentered(_ string: String, y: CGFloat, font: NSFont, ink: NSColor) {
@@ -155,7 +188,7 @@ func drawCentered(_ string: String, y: CGFloat, font: NSFont, ink: NSColor) {
 }
 
 func writeStacked(background: NSColor?, ink: NSColor, filename: String) throws {
-    let image = prepareCanvas(size: stackedSize, background: background)
+    let surface = prepareCanvas(size: stackedSize, background: background)
 
     let markSize: CGFloat = 390
     let mark = tintedMark(
@@ -169,21 +202,17 @@ func writeStacked(background: NSColor?, ink: NSColor, filename: String) throws {
         height: markSize
     ))
 
-    let templetonFont = fittedFont(
+    let stackedFont = fittedFont(
         for: "TEMPLETON",
         maxWidth: 970,
         startingAt: 164
     )
-    let protectFont = fittedFont(
-        for: "PROTECT",
-        maxWidth: 970,
-        startingAt: 224
-    )
-    drawCentered("TEMPLETON", y: 455, font: templetonFont, ink: ink)
-    drawCentered("PROTECT", y: 190, font: protectFont, ink: ink)
+    drawCentered("TEMPLETON", y: 420, font: stackedFont, ink: ink)
+    drawCentered("PROTECT", y: 245, font: stackedFont, ink: ink)
 
-    image.unlockFocus()
-    try write(image, filename: filename)
+    surface.context.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
+    try write(surface.bitmap, filename: filename)
 }
 
 // Horizontal family: two transparent masters and two presentation backgrounds.
