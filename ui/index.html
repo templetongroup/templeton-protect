@@ -123,6 +123,50 @@ body:not(.idle) .hero p { text-align: left; font-size: 13.5px; }
 
 .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 h1 { font-size: 25px; font-weight: 600; letter-spacing: -.02em; }
+
+/* ── the wordmark ──────────────────────────────────────────
+   Built the way Radiant's is — one heavy uppercase word, letter-spaced, carrying
+   the accent — but in Protect's OWN heading face (Outfit, not Montserrat) so it
+   reads as this product rather than a transplant.
+
+   ⚠️ THE COLOUR IS --high, THE AMBER THIS APP ALREADY USES. Protect's theme is
+   teal and has no yellow in it; --high is the one warm colour in the palette,
+   the severity band between critical and low. Using it means the wordmark shifts
+   correctly between light and dark with everything else, instead of pinning a
+   hex that would be wrong in one of them. To change the shade, change --high-set
+   below — nothing else references it. */
+/* ⚠️ ITS OWN TOKEN, NOT AN ALIAS OF --high. --high is a SEVERITY: it means "this
+   finding is serious". Painting the logo with it would tie the brand to a
+   meaning, so a later tweak to the severity colour would silently restyle the
+   wordmark — and vice versa. One name, one job.
+
+   ⚠️ AND IT IS TWO SHADES, NOT ONE. A true yellow on the near-white ground fails
+   contrast badly — yellow is simply too light — which is why the palette already
+   darkens its warm tone. The light value is a deep gold that stays readable; the
+   dark one is the yellow it wants to be. Change these two lines and nothing else
+   moves. */
+:root { --mark: #b07d12; }
+@media (prefers-color-scheme: dark) { :root { --mark: #f2c14e; } }
+:root[data-theme="dark"] { --mark: #f2c14e; }
+:root[data-theme="light"] { --mark: #b07d12; }
+.wordmark {
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+  display: inline-flex; align-items: baseline; gap: .34em;
+  line-height: 1;
+}
+/* "TEMPLETON" is the house, so it stays quiet and wide. */
+.wordmark-house {
+  font-weight: 600; text-transform: uppercase;
+  letter-spacing: .22em; font-size: .46em;
+  color: var(--ink-2);
+}
+/* "PROTECT" is the product, and carries the colour. */
+.wordmark-product {
+  font-weight: 800; text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--mark);
+}
+h1.wordmark { font-size: 30px; letter-spacing: normal; }
 .sub { color: var(--ink-2); font-size: 14.5px; }
 
 /* ── hero ─────────────────────────────────────────────── */
@@ -256,7 +300,11 @@ details.evi .body { font-size: 13px; color: var(--ink-2); margin-top: 7px; displ
 
   <main class="stage">
     <div class="inner">
-      <div class="head"><h1>Templeton Protect</h1></div>
+      <div class="head">
+        <h1 class="wordmark">
+          <span class="wordmark-house">Templeton</span><span class="wordmark-product">Protect</span>
+        </h1>
+      </div>
       <p class="sub">Scan your AI, then scan your code.</p>
 
       <section class="hero" id="hero">
