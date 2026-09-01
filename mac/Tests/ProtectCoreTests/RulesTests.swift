@@ -265,3 +265,99 @@ final class InstallationsFixtureTests: XCTestCase {
         XCTAssertFalse(reachableByOthers(path: f, home: home.path).0)
     }
 }
+
+final class AgentAuditTests: XCTestCase {
+    var home: URL!
+
+    override func setUpWithError() throws {
+        home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-agents-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude"),
+                                                withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: home)
+    }
+
+    func write(_ name: String, _ contents: String) throws {
+        let url = home.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func rules() -> [String] { auditAgents(home: home.path).map(\.rule) }
+
+    func testUnpinnedNpxServerIsFlagged() throws {
+        try write(".claude.json", #"{"mcpServers":{"files":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/tmp"]}}}"#)
+        XCTAssertTrue(rules().contains("mcp-unpinned-package"))
+    }
+
+    func testPinnedServerIsNot() throws {
+        try write(".claude.json", #"{"mcpServers":{"files":{"command":"npx","args":["@scope/server@1.2.3"]}}}"#)
+        XCTAssertFalse(rules().contains("mcp-unpinned-package"))
+    }
+
+    func testCredentialInEnvIsFlaggedByNameNotValue() throws {
+        try write(".claude.json", #"{"mcpServers":{"api":{"command":"/usr/local/bin/x","env":{"SERVICE_API_KEY":"sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"}}}}"#)
+        let f = auditAgents(home: home.path).first { $0.rule == "mcp-credential-in-config" }
+        XCTAssertNotNil(f)
+        // ⚠️ The evidence names the variable, never the value.
+        XCTAssertFalse(f!.evidence.contains("Ab3dEfGh"))
+        XCTAssertTrue(f!.evidence.contains("SERVICE_API_KEY"))
+    }
+
+    func testPlaceholderEnvValueIsNot() throws {
+        try write(".claude.json", #"{"mcpServers":{"api":{"command":"/x","env":{"API_KEY":"YOUR-KEY-HERE-PLEASE"}}}}"#)
+        XCTAssertFalse(rules().contains("mcp-credential-in-config"))
+    }
+
+    func testEnvPassthroughIsNot() throws {
+        try write(".claude.json", #"{"mcpServers":{"api":{"command":"/x","env":{"API_KEY":"${OPENAI_API_KEY}"}}}}"#)
+        XCTAssertFalse(rules().contains("mcp-credential-in-config"))
+    }
+
+    func testBareShellGrantIsFlaggedAndScopedGrantIsNot() throws {
+        try write(".claude/settings.local.json", #"{"permissions":{"allow":["Bash(git status)","WebSearch"]}}"#)
+        XCTAssertFalse(rules().contains("broad-shell-permission"))
+        try write(".claude/settings.local.json", #"{"permissions":{"allow":["Bash(*)"]}}"#)
+        XCTAssertTrue(rules().contains("broad-shell-permission"))
+    }
+
+    func testCodexNeverAskIsFlagged() throws {
+        try write(".codex/config.toml", "model = \"gpt-x\"\napproval_policy = \"never\"\n")
+        XCTAssertTrue(rules().contains("agent-approval-never"))
+        try write(".codex/config.toml", "approval_policy = \"on-request\"\n")
+        XCTAssertFalse(rules().contains("agent-approval-never"))
+    }
+
+    func testWritableHookScriptIsCritical() throws {
+        try write("hook.sh", "#!/bin/sh\necho ok\n")
+        let script = home.appendingPathComponent("hook.sh").path
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: script)
+        try write(".claude/settings.json",
+                  "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"sh \(script)\"}]}]}}")
+        let f = auditAgents(home: home.path).first { $0.rule == "hook-script-writable" }
+        XCTAssertEqual(f?.severity, .critical)
+    }
+
+    func testPrivateHookScriptIsNot() throws {
+        try write("hook.sh", "#!/bin/sh\necho ok\n")
+        let script = home.appendingPathComponent("hook.sh").path
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+        try write(".claude/settings.json",
+                  "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"sh \(script)\"}]}]}}")
+        XCTAssertFalse(rules().contains("hook-script-writable"))
+    }
+
+    /// ⚠️ Blast radius only fires when an unfenced grant exists — an agent being
+    /// able to read what the account reads is how computers work, not a finding.
+    func testBlastRadiusNeedsAnUnfencedGrant() throws {
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".ssh"),
+                                                withIntermediateDirectories: true)
+        XCTAssertFalse(rules().contains("unfenced-agent-reach"))
+        try write(".claude/settings.local.json", #"{"permissions":{"allow":["Bash(*)"]}}"#)
+        XCTAssertTrue(rules().contains("unfenced-agent-reach"))
+    }
+}

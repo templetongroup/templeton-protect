@@ -124,6 +124,7 @@ enum Phase { case idle, scanning, done }
             stageHeadline = "Reading this Mac…"
         case .installations:
             stages = installed.map { Stage(tool: $0.tool, dir: $0.dir, state: .waiting) }
+                + [Stage(tool: "Agent permissions", dir: "what your agents may do", state: .waiting)]
             stageHeadline = "Reading your AI installations…"
         case .code:
             let name = codeTarget.map { ($0.path as NSString).lastPathComponent } ?? "your code"

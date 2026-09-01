@@ -298,6 +298,23 @@ public func scanAiInstallations(home: String = NSHomeDirectory(),
                               finishedFindings: findings.count - findingsAtToolStart))
     }
 
+    // ── what the agents are allowed to do ──────────────────────────────
+    //
+    // The walk above finds what already leaked; this reads the agents' own
+    // configuration — MCP servers, allowlists, hooks, approval policies — and
+    // reports the standing grants. See Agents.swift.
+    if !isCancelled() {
+        let stage = "Agent permissions"
+        progress(ScanProgress(tool: stage, path: "reading agent configuration",
+                              filesRead: filesRead, findingsSoFar: findings.count,
+                              finishedTool: nil, finishedFindings: nil))
+        let audit = auditAgents(home: home)
+        findings += audit
+        progress(ScanProgress(tool: stage, path: "", filesRead: filesRead,
+                              findingsSoFar: findings.count,
+                              finishedTool: stage, finishedFindings: audit.count))
+    }
+
     return ScanResult(findings: sortedBySeverity(findings), toolsFound: tools, filesRead: filesRead)
 }
 
