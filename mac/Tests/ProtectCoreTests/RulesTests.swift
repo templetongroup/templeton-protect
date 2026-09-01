@@ -537,47 +537,162 @@ final class HistoryTests: XCTestCase {
 }
 
 final class WatcherTests: XCTestCase {
-    /// The resident claim in one test: a key written to a transcript is
-    /// noticed without anyone pressing anything.
-    func testAKeyWrittenToATranscriptIsNoticed() throws {
+    /// A UserDefaults nobody else shares, so a test cannot inherit or leave
+    /// state in the real preferences.
+    func freshDefaults() -> UserDefaults {
+        let suite = "protect.tests.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        addTeardownBlock { d.removePersistentDomain(forName: suite) }
+        return d
+    }
+
+    func tempDir() throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("protect-watch-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir
+    }
 
+    let key = #"{"text":"key sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"}"#
+
+    /// The resident claim in one test: a key written to a transcript is
+    /// noticed without anyone pressing anything.
+    func testAKeyWrittenToATranscriptIsNoticed() throws {
+        let dir = try tempDir()
         let noticed = expectation(description: "key noticed")
         var got: [String] = []
-        let watcher = TranscriptWatcher(roots: [dir.path]) { _, vendors in
-            got = vendors
+        let watcher = TranscriptWatcher(roots: [dir.path], defaults: freshDefaults(), coalesce: 0.3) { hits in
+            got = hits.flatMap(\.vendors)
             noticed.fulfill()
         }
         watcher.start()
         defer { watcher.stop() }
-
-        // Give FSEvents a beat to arm before the write it must see.
         Thread.sleep(forTimeInterval: 0.5)
-        try #"{"text":"key sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"}"#
-            .write(to: dir.appendingPathComponent("session.jsonl"),
-                   atomically: true, encoding: .utf8)
-
+        try key.write(to: dir.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
         wait(for: [noticed], timeout: 10)
         XCTAssertEqual(got, ["OpenAI"])
     }
 
     func testAKeylessWriteIsIgnored() throws {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("protect-watch2-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-
+        let dir = try tempDir()
         let fired = expectation(description: "no callback")
         fired.isInverted = true
-        let watcher = TranscriptWatcher(roots: [dir.path]) { _, _ in fired.fulfill() }
+        let watcher = TranscriptWatcher(roots: [dir.path], defaults: freshDefaults(), coalesce: 0.3) { _ in fired.fulfill() }
         watcher.start()
         defer { watcher.stop() }
         Thread.sleep(forTimeInterval: 0.5)
-        try "just words\n".write(to: dir.appendingPathComponent("s.jsonl"),
-                                 atomically: true, encoding: .utf8)
+        try "just words\n".write(to: dir.appendingPathComponent("s.jsonl"), atomically: true, encoding: .utf8)
         wait(for: [fired], timeout: 4)
+    }
+
+    /**
+     ⚠️ THE STORM TEST. The same key in the same file must be announced once and
+     then never again — including after a restart, which is why the memory is in
+     UserDefaults and why this test hands a second watcher the same store.
+     */
+    func testTheSameKeyIsNotAnnouncedTwice() throws {
+        let dir = try tempDir()
+        let defaults = freshDefaults()
+        let file = dir.appendingPathComponent("session.jsonl")
+
+        let first = expectation(description: "announced once")
+        let w1 = TranscriptWatcher(roots: [dir.path], defaults: defaults, coalesce: 0.3) { _ in first.fulfill() }
+        w1.start()
+        Thread.sleep(forTimeInterval: 0.5)
+        try key.write(to: file, atomically: true, encoding: .utf8)
+        wait(for: [first], timeout: 10)
+        w1.stop()
+
+        // A second watcher over the same store is a relaunch of the app.
+        let again = expectation(description: "must not announce again")
+        again.isInverted = true
+        let w2 = TranscriptWatcher(roots: [dir.path], defaults: defaults, coalesce: 0.3) { _ in again.fulfill() }
+        w2.start()
+        defer { w2.stop() }
+        Thread.sleep(forTimeInterval: 0.5)
+        // The session is appended to, as a live transcript constantly is.
+        try (key + "\n{\"text\":\"more conversation\"}\n")
+            .write(to: file, atomically: true, encoding: .utf8)
+        wait(for: [again], timeout: 5)
+    }
+
+    /// But a genuinely new key still speaks up.
+    func testANewKeyInTheSameFileIsAnnounced() throws {
+        let dir = try tempDir()
+        let defaults = freshDefaults()
+        let file = dir.appendingPathComponent("session.jsonl")
+
+        let first = expectation(description: "first")
+        let w1 = TranscriptWatcher(roots: [dir.path], defaults: defaults, coalesce: 0.3) { _ in first.fulfill() }
+        w1.start()
+        Thread.sleep(forTimeInterval: 0.5)
+        try key.write(to: file, atomically: true, encoding: .utf8)
+        wait(for: [first], timeout: 10)
+        w1.stop()
+
+        let second = expectation(description: "a different vendor is new news")
+        var got: [String] = []
+        let w2 = TranscriptWatcher(roots: [dir.path], defaults: defaults, coalesce: 0.3) { hits in
+            got = Array(Set(hits.flatMap(\.vendors))).sorted()
+            second.fulfill()
+        }
+        w2.start()
+        defer { w2.stop() }
+        Thread.sleep(forTimeInterval: 0.5)
+        try (key + "\n{\"t\":\"ghp_AbCdEfGh1jKlMn0pQrStUvWxYz01234567\"}\n")
+            .write(to: file, atomically: true, encoding: .utf8)
+        wait(for: [second], timeout: 10)
+        XCTAssertEqual(got, ["GitHub", "OpenAI"])
+    }
+
+    /// A burst of files is one announcement, not one each.
+    func testABurstIsOneBatch() throws {
+        let dir = try tempDir()
+        let batched = expectation(description: "one callback with three files")
+        var count = 0
+        let watcher = TranscriptWatcher(roots: [dir.path], defaults: freshDefaults(), coalesce: 1.0) { hits in
+            count = hits.count
+            batched.fulfill()
+        }
+        watcher.start()
+        defer { watcher.stop() }
+        Thread.sleep(forTimeInterval: 0.5)
+        for i in 0..<3 {
+            try key.write(to: dir.appendingPathComponent("s\(i).jsonl"), atomically: true, encoding: .utf8)
+        }
+        wait(for: [batched], timeout: 10)
+        XCTAssertEqual(count, 3)
+    }
+
+    func testFingerprintChangesOnlyWhenTheKeysDo() {
+        XCTAssertEqual(TranscriptWatcher.fingerprint(["OpenAI"]),
+                       TranscriptWatcher.fingerprint(["OpenAI"]))
+        XCTAssertNotEqual(TranscriptWatcher.fingerprint(["OpenAI"]),
+                          TranscriptWatcher.fingerprint(["OpenAI", "GitHub"]))
+        XCTAssertNotEqual(TranscriptWatcher.fingerprint(["OpenAI"]),
+                          TranscriptWatcher.fingerprint(["OpenAI", "OpenAI"]))
+    }
+
+    /// ⚠️ The bookkeeping must not become a list of where secrets live.
+    func testTheStoredKeyIsAHashNotAPath() {
+        let tag = TranscriptWatcher.tag("/Users/someone/.claude/private.jsonl")
+        XCTAssertFalse(tag.contains("someone"))
+        XCTAssertFalse(tag.contains("claude"))
+        XCTAssertEqual(tag.count, 16)
+    }
+}
+
+final class AgentNamingTests: XCTestCase {
+    /// ⚠️ "1a183aae-…-c49ed7c7c117.jsonl" is not a place a person can act on.
+    func testTheAssistantIsNamedRatherThanTheUUID() {
+        let home = "/Users/x"
+        XCTAssertEqual(
+            TranscriptWatcher.agent(forPath: "/Users/x/.claude/projects/a/1a183aae-5627.jsonl", home: home),
+            "Claude Code")
+        XCTAssertEqual(
+            TranscriptWatcher.agent(forPath: "/Users/x/.codex/sessions/2026/s.jsonl", home: home),
+            "Codex")
+        XCTAssertNil(TranscriptWatcher.agent(forPath: "/Users/x/Documents/notes.md", home: home))
     }
 }

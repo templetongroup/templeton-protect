@@ -37,6 +37,43 @@ plus `Watcher.swift` and `History.swift` in core so they can be tested, and
   Recent macOS may refuse a background app's activation, and a refused activate
   leaves the window behind whatever is in front of it — a button that silently
   does nothing, which this project has a rule against.
+- ⚠️ **A NOTIFICATION NEEDS A DELEGATE OR THE TAP GOES NOWHERE.** Tony: "the
+  notfications that pop up go nowhere when you click them." Without
+  `UNUserNotificationCenter.current().delegate`, a tap is simply dropped — and an
+  alert whose entire content is "go and look at this" has to be the thing that
+  takes you there. Set the delegate at launch, before asking for authorization:
+  a tap is delivered to whoever is the delegate at that moment, so setting it
+  when the first notification is posted loses every tap on one already sitting in
+  Notification Center. Also implement `willPresent`, or macOS suppresses the
+  banner whenever the app is frontmost.
+- ⚠️ **ONE LEAKED KEY IS ONE ALERT, ACROSS RESTARTS.** The reported-paths set
+  lived in memory, so every relaunch re-announced every transcript that still
+  held a key. After a morning of test builds Tony had a stack of them: "im also
+  getting constant pings like this now." A resident tool that cries the same wolf
+  on every launch is one people mute, and a muted alert is worse than none
+  because it looks like cover. What is remembered is a **fingerprint** — which
+  vendors, how many — persisted in UserDefaults and keyed by a **hash of the
+  path**, because preferences are world-readable and this app's own bookkeeping
+  must not become the list of where somebody's secrets live. An appended-to
+  session holding the same key stays silent; a genuinely new key still speaks.
+  A burst of files coalesces into one banner.
+- ⚠️ **NAME THE ASSISTANT, NOT THE FILE.** Claude Code names sessions by UUID, so
+  the alert read "keys in 1a183aae-5627-487d-b514-c49ed7c7c117.jsonl" — a fact
+  nobody can act on. `TranscriptWatcher.agent(forPath:)` maps the path back to
+  "a Claude Code conversation"; the exact path is on the finding card.
+- ⚠️ **NOTIFICATIONS CANNOT BE TESTED ON A LOCAL BUILD.** macOS ties notification
+  authorization to the app's code signature, and `build.sh` signs ad-hoc — a
+  fresh signature every build, so the system sees a different app and denies it.
+  Two runs of identical code minutes apart logged `didGrant: 1` and then
+  `didGrant: 0` for exactly this reason, which looked like a flaky bug and was
+  the loop measuring itself. Test notification behavior only on the signed,
+  notarized build. Read the truth with:
+
+      log show --predicate 'process == "Protect"' --last 60s --style compact \
+        | grep -iE "Requested authorization|Added notification"
+
+  `didGrant: 0 hasError: 1` arriving a millisecond after the request is a refused
+  signature, not a user who said no.
 - ⚠️ **`isReleasedWhenClosed` is true by default for a programmatic NSWindow.**
   The delegate holds its own strong reference, so the red button handed the
   window to AppKit to destroy while `window` still pointed at it. With keep-watch

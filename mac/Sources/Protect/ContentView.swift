@@ -47,10 +47,32 @@ enum Phase { case idle, scanning, done }
     var resident: (() -> Resident?)?
     /// Mirrors Resident.enabled so SwiftUI sees the change; the Resident owns
     /// the machinery, this owns the pixels.
+    /// macOS refused to let this app post notifications. Keep watch still runs
+    /// and the menu bar line still reports; the live alert cannot arrive.
+    @Published var notificationsBlocked = false
     @Published var keepWatch = UserDefaults.standard.bool(forKey: "keepWatch") {
         didSet { resident?()?.enabled = keepWatch }
     }
     private var timer: Timer?
+
+    /**
+     Show what the background scans already found.
+
+     Used when a notification is tapped: the work happened in the background, so
+     making somebody press Scan again to see it would be asking them to redo it.
+     Unlike `refreshFromHistory`, this deliberately moves the screen to the
+     results — it is a response to a click, not a quiet catch-up.
+     */
+    func presentHistory() {
+        guard phase != .scanning else { return }
+        var any = false
+        for kind in ScanKind.allCases {
+            guard let record = history.previous(kind: kind.rawValue) else { continue }
+            results[kind] = record.result
+            any = true
+        }
+        if any { phase = .done }
+    }
 
     /// A background (menu bar) scan finished; pick up its results so the window
     /// agrees with the notification that just fired.
@@ -494,6 +516,29 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: Space.lg)
+            // ⚠️ DO NOT PROMISE AN ALERT THAT CANNOT ARRIVE. Keep watch still
+            // runs with notifications refused — the schedule, the history and the
+            // menu bar line all work — but the live alert is the headline of this
+            // feature, and silently not delivering it is the worst version of
+            // "it's on". Say so, and point at the switch that fixes it.
+            if model.keepWatch && model.notificationsBlocked {
+                Button {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: Space.xs) {
+                        Image(systemName: "bell.slash.fill")
+                        Text("Alerts are off")
+                    }
+                    .font(.system(size: FontSize.caption, weight: .semibold))
+                    .foregroundStyle(Ink.critical)
+                    .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                    .background(Capsule().strokeBorder(Ink.critical.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("macOS is not allowing Templeton Protect to post notifications. Scans and the menu bar still work.")
+            }
             Toggle("", isOn: $model.keepWatch)
                 .toggleStyle(.switch)
                 .labelsHidden()

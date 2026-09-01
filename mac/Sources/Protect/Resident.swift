@@ -15,7 +15,7 @@ import UserNotifications
 // tool that keeps proving it is on gets switched off.
 
 @MainActor
-final class Resident: NSObject {
+final class Resident: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     private weak var model: Model?
     /// Asks the app delegate to bring its window back. A closure, so the
     /// Resident never has to know how the window is built or find it by guessing.
@@ -198,9 +198,9 @@ final class Resident: NSObject {
         let roots = aiHomes.map { (home as NSString).appendingPathComponent($0.dir) }
             .filter { FileManager.default.fileExists(atPath: $0) }
         guard !roots.isEmpty else { return }
-        watcher = TranscriptWatcher(roots: roots) { [weak self] path, vendors in
+        watcher = TranscriptWatcher(roots: roots) { [weak self] hits in
             Task { @MainActor in
-                self?.notifyLiveKey(path: path, vendors: vendors)
+                self?.notifyLiveKeys(hits)
                 self?.rebuildMenu()
             }
         }
@@ -209,8 +209,83 @@ final class Resident: NSObject {
 
     // ── notifications ──────────────────────────────────────────────────
     private func requestNotificationLeave() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in
-            // Denied is a fine answer; the menu line still reports.
+        // ⚠️ THE DELEGATE IS SET BEFORE THE PERMISSION IS ASKED FOR, and both
+        // happen at launch. A tap is delivered to whatever is the delegate at
+        // the moment macOS hands it over; setting it lazily — when the first
+        // notification is posted, say — loses every tap on a notification that
+        // was already sitting in Notification Center.
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { granted, error in
+            // ⚠️ NEVER SWALLOW THIS. The first version was `{ _, _ in }` with a
+            // comment saying denial was fine — and it hid the fact that the
+            // request was failing outright, so keep-watch promised a live alert
+            // that could never arrive. Denial IS fine; not knowing is not.
+            Task { @MainActor in
+                self.notificationsAllowed = granted
+                self.notificationProblem = error?.localizedDescription
+                /*
+                 ⚠️ AN AD-HOC BUILD LOSES THIS EVERY TIME IT IS REBUILT. macOS ties
+                 notification authorization to the app's code signature, and
+                 `build.sh` signs ad-hoc — a fresh signature each build, so the
+                 system sees a different app and denies it. Two runs of the same
+                 code minutes apart logged `didGrant: 1` and then `didGrant: 0`
+                 for exactly this reason. Notification behavior is only ever true
+                 when measured on the signed, notarized build; the local loop
+                 cannot tell you anything about it.
+                 */
+                if let error { FileHandle.standardError.write("notifications: \(error)\n".data(using: .utf8)!) }
+                self.model?.notificationsBlocked = !granted
+            }
+        }
+    }
+
+    /// Whether macOS will actually deliver what this posts.
+    @Published private(set) var notificationsAllowed = true
+    private(set) var notificationProblem: String?
+
+    // ── what a tap does ────────────────────────────────────────────────
+    //
+    // ⚠️ A NOTIFICATION THAT GOES NOWHERE IS WORSE THAN NO NOTIFICATION. Tony:
+    // "the notfications that pop up go nowhere when you click them." They told
+    // somebody a key had just been written and then dropped them on the floor —
+    // an alert whose entire content is "go and look at this" has to be the thing
+    // that takes you there. Without a delegate a tap does nothing at all, which
+    // is the same silent-no-op family as the menu bar's Open item.
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completion: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
+        Task { @MainActor in
+            self.act(on: info)
+            completion()
+        }
+    }
+
+    /// ⚠️ macOS SUPPRESSES A BANNER WHILE THE APP IS FRONTMOST unless this says
+    /// otherwise. The window being open does not mean somebody is looking at it,
+    /// and a key landing in a transcript is worth saying out loud either way.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification,
+                                            withCompletionHandler completion: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // No sound: resident means quiet.
+        completion([.banner, .list])
+    }
+
+    /// The tap handler proper, separated so it can be exercised without
+    /// synthesising a UNNotificationResponse — which cannot be constructed.
+    func act(on info: [AnyHashable: Any]) {
+        showWindow()
+        switch info["action"] as? String {
+        case "live":
+            // A key was written moments ago, so the recorded results predate it.
+            // Re-scan the installations: the finding arrives real, with its
+            // "Remove the key from this transcript" button attached.
+            model?.scan(.installations)
+        default:
+            // A scheduled scan already did the work in the background; show what
+            // it found rather than making somebody run it again.
+            model?.presentHistory()
         }
     }
 
@@ -222,18 +297,38 @@ final class Resident: NSObject {
             : "\(new.count) new findings on this Mac"
         content.body = (worst.map { redact($0.title) } ?? "")
             + (open > new.count ? " — \(open) open in total" : "")
+        content.userInfo = ["action": "results"]
         deliver(content, id: "scan-\(Date().timeIntervalSince1970)")
     }
 
-    private func notifyLiveKey(path: String, vendors: [String]) {
+    /// ⚠️ ONE BANNER FOR A BURST, NOT ONE PER FILE. Saving work can touch
+    /// several transcripts at once, and a stack of identical banners is how a
+    /// useful alert becomes noise somebody turns off.
+    private func notifyLiveKeys(_ hits: [TranscriptWatcher.Hit]) {
+        guard let first = hits.first else { return }
         let content = UNMutableNotificationContent()
-        let unique = Array(Set(vendors)).sorted()
-        content.title = "A key was just written to a conversation log"
+        let unique = Array(Set(hits.flatMap(\.vendors))).sorted()
+        content.title = hits.count == 1
+            ? "A key was just written to a conversation log"
+            : "Keys were just written to \(hits.count) conversation logs"
         // ⚠️ THE VENDOR AND THE FILE NAME, NEVER THE KEY. And the path's last
         // component only — a notification banner is the most public pixel on
         // the screen.
-        content.body = "\(unique.joined(separator: " and ")) key\(vendors.count == 1 ? "" : "s") in \((path as NSString).lastPathComponent). Open Templeton Protect to remove it and rotate."
-        deliver(content, id: "live-\(path.hashValue)")
+        let where_: String
+        if hits.count == 1 {
+            where_ = TranscriptWatcher.agent(forPath: first.path).map { "a \($0) conversation" }
+                ?? (first.path as NSString).lastPathComponent
+        } else {
+            let agents = Set(hits.compactMap { TranscriptWatcher.agent(forPath: $0.path) }).sorted()
+            where_ = agents.isEmpty ? "\(hits.count) conversation logs"
+                : "\(hits.count) \(agents.joined(separator: " and ")) conversations"
+        }
+        content.body = "\(unique.joined(separator: " and ")) key\(unique.count == 1 ? "" : "s") in \(where_). Click to open Templeton Protect and remove it."
+        // ⚠️ THE PATH DOES NOT TRAVEL IN userInfo. A notification's payload is
+        // stored by the system and survives in Notification Center; the tap only
+        // needs to know which scan to run.
+        content.userInfo = ["action": "live"]
+        deliver(content, id: "live-\(hits.map(\.path).sorted().joined().hashValue)")
     }
 
     private func deliver(_ content: UNMutableNotificationContent, id: String) {
