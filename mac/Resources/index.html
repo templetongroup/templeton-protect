@@ -6,7 +6,7 @@
 <title>Templeton Protect</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
 <style>
 :root {
   --ground: #f6f7f8;
@@ -26,6 +26,12 @@
   --ok: #1d7a52;
   --shadow: 0 1px 2px rgba(16,24,27,.05), 0 12px 32px -12px rgba(16,24,27,.16);
   --r: 18px;
+
+  /* The wordmark's colour. ITS OWN TOKEN, NOT AN ALIAS OF --high. --high is a
+     SEVERITY: it means "this finding is serious". Painting the logo with it would
+     mean any future tuning of the severity band silently restyles the brand.
+     Deep gold here rather than a true yellow, which fails contrast on --ground. */
+  --mark: #b07d12;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -44,7 +50,7 @@
     --high: #e9a95e;
     --low: #8fa3ac;
     --ok: #5fc294;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.6);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px -16px rgba(0,0,0,.6);    --mark: #f2c14e;
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -123,6 +129,24 @@ body:not(.idle) .hero p { text-align: left; font-size: 13.5px; }
 
 .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 h1 { font-size: 25px; font-weight: 600; letter-spacing: -.02em; }
+.wordmark {
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+  display: inline-flex; align-items: baseline; gap: .34em;
+  line-height: 1;
+}
+/* "TEMPLETON" is the house, so it stays quiet and wide. */
+.wordmark-house {
+  font-weight: 600; text-transform: uppercase;
+  letter-spacing: .22em; font-size: .46em;
+  color: var(--ink-2);
+}
+/* "PROTECT" is the product, and carries the colour. */
+.wordmark-product {
+  font-weight: 800; text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--mark);
+}
+h1.wordmark { font-size: 30px; letter-spacing: normal; }
 .sub { color: var(--ink-2); font-size: 14.5px; }
 
 /* ── hero ─────────────────────────────────────────────── */
@@ -256,7 +280,7 @@ details.evi .body { font-size: 13px; color: var(--ink-2); margin-top: 7px; displ
 
   <main class="stage">
     <div class="inner">
-      <div class="head"><h1>Templeton Protect</h1></div>
+      <div class="head"><h1 class="wordmark"><span class="wordmark-house">Templeton</span><span class="wordmark-product">Protect</span></h1></div>
       <p class="sub">Scan your AI, then scan your code.</p>
 
       <section class="hero" id="hero">
