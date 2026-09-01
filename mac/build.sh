@@ -22,6 +22,21 @@ cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
 
+# ⚠️ SwiftPM DOES NOT COMPILE .metal FILES. Declaring them as a resource copies
+# the SOURCE into the bundle and nothing else — `ShaderLibrary.default` then
+# finds no library and every effect silently does nothing, which is the worst
+# kind of failure: it looks like a design choice. Metal is compiled here, by
+# hand, into the default.metallib that ShaderLibrary actually looks for.
+if ls Sources/Protect/Shaders/*.metal >/dev/null 2>&1; then
+  AIR="$(mktemp -d)"
+  for m in Sources/Protect/Shaders/*.metal; do
+    xcrun -sdk macosx metal -c "$m" -o "$AIR/$(basename "${m%.metal}").air" || exit 1
+  done
+  xcrun -sdk macosx metallib "$AIR"/*.air -o "$APP/Contents/Resources/default.metallib" || exit 1
+  rm -rf "$AIR"
+fi
+
+
 # ⚠️ SPARKLE IS A FRAMEWORK AND HAS TO TRAVEL INSIDE THE BUNDLE. The binary
 # links it by rpath (@executable_path/../Frameworks, set in Package.swift); with
 # the framework missing the app builds cleanly and then dies at launch with

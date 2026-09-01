@@ -383,6 +383,31 @@ signs it and stages the DMG into the site repo.
   installed copy silently stops finding updates. And the site has an SPA
   fallback, so a missing file returns **200 with the homepage** — verify a
   deploy by `Content-Type` and byte length, never by status.
+- ⚠️ **SwiftPM COMPILES `.metal` FILES BY ITSELF, and that breaks the universal
+  build.** Even with no `resources:` declaration it picks them up, and a
+  `--arch arm64 --arch x86_64` build then needs the full Metal Toolchain, which
+  is a separate Xcode download: `swift build` dies with "cannot execute tool
+  'metal'". `exclude: ["Shaders"]` in `Package.swift`, and `build.sh` /
+  `release.sh` compile them with `xcrun metal` instead — which works without the
+  extra component. One metallib serves both architectures; it holds AIR, which
+  is GPU-family specific rather than CPU specific.
+
+  ⚠️ This failure reads exactly like a notarisation problem, because the release
+  script prints "▸ building universal" and then stops. Check the top of the log
+  before blaming Apple — twice now that diagnosis has been wrong.
+- ⚠️ **`ShaderLibrary` NEEDS A COMPILED `default.metallib`, NOT THE SOURCE.**
+  Declaring a `.metal` file as a SwiftPM resource copies the *source* into the
+  bundle; `ShaderLibrary.default` then finds nothing and every effect silently
+  does nothing, which looks like a design choice rather than a bug.
+- ⚠️ **`colorEffect` GIVES THE SHADER A POSITION BUT NOT A SIZE.** Pass the real
+  size from a `GeometryReader`; a placeholder divides by zero and renders a flat
+  rectangle that looks like the shader failed to load.
+- ⚠️ **A BACKGROUNDED `release.sh` DIES WITH THE TOOL CALL THAT POLLS IT.**
+  `nohup … &` survives SIGHUP, not the SIGTERM a timed-out foreground command
+  takes its process group down with. The 0.5.0 release was killed mid-flight
+  between stapling the image and writing the appcast, leaving a valid DMG and a
+  stale feed. Run long releases as a tracked background task, and check the
+  appcast actually regenerated before publishing.
 - ⚠️ **Notarising the DMG can outrun a ten-minute command timeout.** `release.sh`
   in the foreground was killed mid-flight, leaving a stapled app and an
   unstapled disk image. Run it backgrounded, or finish with `notarytool submit`

@@ -72,12 +72,55 @@ extension View {
 /// The light the glass refracts. Slow, wide, and never in front of anything.
 struct Aurora: View {
     @State private var drift = false
+    /// Drives the shader. One value, advanced by a timeline, so the whole field
+    /// is a function of it — no per-view animation state to keep in step.
+    @State private var start = Date()
     // ⚠️ REDUCE MOTION IS NOT OPTIONAL. A slow drifting background is exactly the
     // ambient animation that setting exists to stop, and the first version ran it
     // regardless. A still gradient is a perfectly good background.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        /*
+         ⚠️ THE SHADER IS macOS 14+, AND THIS APP SHIPS TO macOS 12. SwiftUI's
+         `colorEffect` does not exist before Sonoma, so the layered-view version
+         below is not legacy code to be deleted — it is what most of the install
+         base actually sees, and it has to keep working. Two paths, on purpose.
+
+         What the GPU buys here is not prettiness: the layered version is a stack
+         of blurred 800pt circles whose sizing once grew the whole window (see
+         the overlay note below), and it repaints on the CPU during a scan that
+         is already fighting for it.
+         */
+        if #available(macOS 14.0, *) {
+            shaderField
+        } else {
+            layeredField
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private var shaderField: some View {
+        // ⚠️ THE SIZE MUST BE REAL. `colorEffect` hands the shader a position in
+        // view coordinates and nothing else; the shader divides by `size` to get
+        // a 0–1 field, so passing a placeholder gives a division by zero and a
+        // flat rectangle that looks like the shader "did not load".
+        GeometryReader { geo in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
+                // ⚠️ REDUCE MOTION FREEZES TIME RATHER THAN BRANCHING. Passing
+                // zero makes the shader draw its own still frame, so there is one
+                // code path and the setting cannot drift out of step with it.
+                let t = reduceMotion ? 0 : timeline.date.timeIntervalSince(start)
+                Rectangle()
+                    .colorEffect(ShaderLibrary.aurora(
+                        .float2(Float(geo.size.width), Float(geo.size.height)),
+                        .float(Float(t))))
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var layeredField: some View {
         // ⚠️ THE DECORATION IS AN OVERLAY, NOT A ZSTACK SIBLING, AND IT IS
         // CLIPPED. As a ZStack this view reported the size of its largest child —
         // a 1200pt capsule — so the window's ZStack grew to about 870pt against a
