@@ -26,6 +26,10 @@ enum Phase { case idle, scanning, done }
     @Published var spec: MachineSpec?
     /// The folder the code scan points at. Nil until somebody chooses one.
     @Published var codeTarget: CodeTarget?
+    /// Also walk the repository's history — slower, so it is a choice.
+    @Published var deepCode = UserDefaults.standard.bool(forKey: deepCodeKey) {
+        didSet { UserDefaults.standard.set(deepCode, forKey: deepCodeKey) }
+    }
     @Published var stages: [Stage] = []
     @Published var currentFile = ""
     @Published var currentFolder = ""
@@ -129,6 +133,7 @@ enum Phase { case idle, scanning, done }
         case .code:
             let name = codeTarget.map { ($0.path as NSString).lastPathComponent } ?? "your code"
             stages = [Stage(tool: name, dir: name, state: .waiting)]
+            if deepCode { stages.append(Stage(tool: "History", dir: "every commit", state: .waiting)) }
             stageHeadline = "Reading \(name)…"
         }
 
@@ -136,6 +141,7 @@ enum Phase { case idle, scanning, done }
             Task { @MainActor in self?.elapsed += 1 }
         }
         let folder = codeTarget?.path
+        let deep = deepCode
         Task.detached(priority: .userInitiated) { [cancelled] in
             // ⚠️ THROTTLED, AND ON PURPOSE. The callback fires once per file
             // read — thousands of times — and publishing every one of them
@@ -155,8 +161,28 @@ enum Phase { case idle, scanning, done }
             case .installations:
                 r = scanAiInstallations(isCancelled: { cancelled.isSet }, progress: report)
             case .code:
-                r = folder.map { scanCode(at: $0, isCancelled: { cancelled.isSet }, progress: report) }
-                    ?? ScanResult(findings: [], toolsFound: [], filesRead: 0)
+                if let folder {
+                    var result = scanCode(at: folder, isCancelled: { cancelled.isSet }, progress: report)
+                    if deep && !cancelled.isSet {
+                        // The history pass reports as its own stage so the wait
+                        // has a name — pickaxe over a real repository is seconds.
+                        report(ScanProgress(tool: "History", path: "searching every commit",
+                                            filesRead: result.filesRead,
+                                            findingsSoFar: result.findings.count,
+                                            finishedTool: nil, finishedFindings: nil))
+                        let hist = scanGitHistory(at: folder, isCancelled: { cancelled.isSet })
+                        result = ScanResult(findings: sortedForDisplay(result.findings + hist),
+                                            toolsFound: result.toolsFound,
+                                            filesRead: result.filesRead)
+                        report(ScanProgress(tool: "History", path: "",
+                                            filesRead: result.filesRead,
+                                            findingsSoFar: result.findings.count,
+                                            finishedTool: "History", finishedFindings: hist.count))
+                    }
+                    r = result
+                } else {
+                    r = ScanResult(findings: [], toolsFound: [], filesRead: 0)
+                }
             }
             await MainActor.run {
                 self.timer?.invalidate()
@@ -246,6 +272,7 @@ enum Phase { case idle, scanning, done }
 }
 
 private let codeFolderKey = "codeFolder"
+private let deepCodeKey = "deepCode"
 
 /// Worst first, and stable inside a severity so the list does not reshuffle
 /// when a second scan adds to it.
@@ -485,6 +512,16 @@ struct ContentView: View {
                     .primaryAction()
             }
             .buttonStyle(.plain)
+
+            if kind == .code, model.codeTarget?.isRepository == true {
+                Toggle(isOn: $model.deepCode) {
+                    Text("Also search the repository's history")
+                        .font(.system(size: FontSize.caption))
+                        .foregroundStyle(Ink.secondary(Dim.strong))
+                }
+                .toggleStyle(.checkbox)
+                .help("Finds secrets that were committed and later deleted — they stay in the history. Slower, so it is a choice.")
+            }
 
             // ⚠️ THE FOLDER HAS TO BE CHANGEABLE WITHOUT SCANNING IT FIRST.
             // Without this the only way to pick a different project is to run a

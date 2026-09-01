@@ -152,6 +152,12 @@ public struct ScanProgress: Sendable {
     /// Set once a tool is finished, so the screen can collapse it to a result.
     public let finishedTool: String?
     public let finishedFindings: Int?
+    public init(tool: String, path: String, filesRead: Int, findingsSoFar: Int,
+                finishedTool: String?, finishedFindings: Int?) {
+        self.tool = tool; self.path = path; self.filesRead = filesRead
+        self.findingsSoFar = findingsSoFar; self.finishedTool = finishedTool
+        self.finishedFindings = finishedFindings
+    }
 }
 
 public func scanAiInstallations(home: String = NSHomeDirectory()) -> ScanResult {

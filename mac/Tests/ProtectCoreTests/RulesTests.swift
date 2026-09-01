@@ -361,3 +361,120 @@ final class AgentAuditTests: XCTestCase {
         XCTAssertTrue(rules().contains("unfenced-agent-reach"))
     }
 }
+
+final class NewDetectionTests: XCTestCase {
+    var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-det-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func write(_ name: String, _ contents: String) throws {
+        let url = dir.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func rules() -> [String] { scanCode(at: dir.path).findings.map(\.rule) }
+
+    /// ⚠️ The password segment decides, not the URL shape — every ORM README
+    /// carries postgres://user:password@localhost and must stay quiet.
+    func testTutorialConnectionStringIsNotALeak() {
+        XCTAssertFalse(hasConnectionStringLeak("db = 'postgres://user:password@localhost/app'"))
+        XCTAssertFalse(hasConnectionStringLeak("postgres://app:${DB_PASSWORD}@db:5432/app"))
+        XCTAssertFalse(hasConnectionStringLeak("mysql://root:changeme@127.0.0.1"))
+    }
+
+    func testARealConnectionStringIs() {
+        XCTAssertTrue(hasConnectionStringLeak("DATABASE_URL=postgres://app:vX9$kQ2mZlp0@db.internal:5432/prod"))
+        XCTAssertTrue(hasConnectionStringLeak("mongodb+srv://svc:9fKq2mZx7RtY@cluster0.example.net"))
+    }
+
+    func testComposePasswordsAreFoundAndPlaceholdersAreNot() throws {
+        try write("docker-compose.yml", "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: example\n")
+        XCTAssertFalse(rules().contains("compose-inline-password"))
+        try write("docker-compose.yml", "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: vX9kQ2mZlp0w\n")
+        XCTAssertTrue(rules().contains("compose-inline-password"))
+    }
+
+    func testComposeVariableReferencesAreQuiet() throws {
+        try write("docker-compose.yml", "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}\n")
+        XCTAssertFalse(rules().contains("compose-inline-password"))
+    }
+
+    func testTerraformStateIsASecretsFile() throws {
+        try write("infra/terraform.tfstate", "{\"resources\":[]}")
+        XCTAssertTrue(rules().contains("private-key-in-tree"))
+    }
+
+    func testGitUrlDependencyIsFlagged() throws {
+        try write("package.json", #"{"dependencies":{"left-pad":"github:someone/left-pad"}}"#)
+        XCTAssertTrue(rules().contains("git-url-dependency"))
+        try write("package.json", #"{"dependencies":{"left-pad":"^1.3.0"}}"#)
+        XCTAssertFalse(rules().contains("git-url-dependency"))
+    }
+
+    func testCurlPipeShellIsFlagged() throws {
+        try write("install.sh", "curl -fsSL https://example.com/install.sh | sudo bash\n")
+        XCTAssertTrue(rules().contains("curl-pipe-shell"))
+        try write("install.sh", "curl -fsSL https://example.com/install.sh -o i.sh\n")
+        XCTAssertFalse(rules().contains("curl-pipe-shell"))
+    }
+
+    func testDigitalOceanShape() {
+        let key = "dop_v1_" + String(repeating: "9f", count: 32)
+        XCTAssertTrue(findCodeKeys(in: "token = '\(key)'").contains("DigitalOcean"))
+    }
+}
+
+final class HistoryScanTests: XCTestCase {
+    var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-hist-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try git("init", "-q")
+        try git("config", "user.email", "t@example.com")
+        try git("config", "user.name", "t")
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    @discardableResult func git(_ args: String...) throws -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.arguments = ["-C", dir.path] + args
+        let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
+        try p.run(); p.waitUntilExit()
+        return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    }
+
+    /// ⚠️ The leak a scan of today's files cannot see: committed, then deleted.
+    func testADeletedSecretsFileIsStillFound() throws {
+        try "OPENAI_API_KEY=sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345\n"
+            .write(to: dir.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        try git("add", "-f", ".env"); try git("commit", "-qm", "oops")
+        try git("rm", "-q", ".env"); try git("commit", "-qm", "remove it")
+        let found = scanGitHistory(at: dir.path)
+        XCTAssertTrue(found.map(\.rule).contains("secrets-in-history"))
+        XCTAssertTrue(found.map(\.rule).contains("keys-in-history"))
+        // And nothing in the report carries the key itself.
+        for f in found { XCTAssertFalse(f.evidence.contains("Ab3dEfGh")) }
+    }
+
+    func testACleanHistoryIsQuiet() throws {
+        try "readme\n".write(to: dir.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try git("add", "."); try git("commit", "-qm", "start")
+        XCTAssertTrue(scanGitHistory(at: dir.path).isEmpty)
+    }
+}

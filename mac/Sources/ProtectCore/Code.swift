@@ -47,8 +47,13 @@ private let sourceExtensions: Set<String> = [
 private let secretFileNames: Set<String> = [
     "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".npmrc", ".pypirc",
     ".netrc", "credentials", "service-account.json", "serviceAccountKey.json",
+    // ⚠️ terraform.tfstate EMBEDS the secrets of everything it manages —
+    // database passwords, generated keys — in plain JSON. People commit it
+    // because it looks like configuration. kubeconfig is a cluster login.
+    "terraform.tfstate", "kubeconfig",
 ]
-private let secretFileExtensions: Set<String> = ["pem", "p12", "pfx", "key", "keystore", "jks"]
+private let secretFileExtensions: Set<String> = ["pem", "p12", "pfx", "key", "keystore", "jks",
+                                                 "tfstate", "kubeconfig"]
 
 private let maxFileSize = 4 * 1024 * 1024
 
@@ -60,6 +65,7 @@ private let maxFileSize = 4 * 1024 * 1024
 /// sentence rather than an investigation.
 private let codeKeyShapes: [(String, NSRegularExpression)] = [
     ("AWS", try! NSRegularExpression(pattern: #"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"#)),
+    ("DigitalOcean", try! NSRegularExpression(pattern: #"\bdop_v1_[a-f0-9]{64}\b"#)),
     ("Stripe", try! NSRegularExpression(pattern: #"\bsk_live_[0-9A-Za-z]{20,}\b"#)),
     ("SendGrid", try! NSRegularExpression(pattern: #"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b"#)),
     ("Twilio", try! NSRegularExpression(pattern: #"\bSK[0-9a-fA-F]{32}\b"#)),
@@ -108,9 +114,42 @@ let keyShapesForRedaction: [(String, NSRegularExpression)] = keyShapes + [
     ("npm", try! NSRegularExpression(pattern: #"\bnpm_[A-Za-z0-9]{36}\b"#)),
 ]
 
+/**
+ A password inside a database URL — `postgres://user:PASSWORD@host`.
+
+ The most common real leak in small-business code is not a vendor API key, it is
+ the database connection string, because frameworks ask for it as one value and
+ one value is what gets pasted.
+
+ ⚠️ THE PASSWORD SEGMENT DECIDES, NOT THE URL SHAPE. Documentation is full of
+ `postgres://user:password@localhost` — literally the word "password" — and every
+ ORM's README has one. The captured segment goes through the placeholder test
+ plus its own list of the words tutorials use, so only a value somebody actually
+ chose gets reported.
+ */
+private let connectionString = try! NSRegularExpression(
+    pattern: #"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqps?|mssql)://([^:/\s'"]{1,64}):([^@/\s'"]{4,128})@"#)
+
+private let tutorialPasswords: Set<String> = ["password", "pass", "pwd", "secret", "changeme",
+                                              "postgres", "mysql", "root", "admin", "example",
+                                              "test", "user", "username", "mypassword", "s3cret"]
+
+func hasConnectionStringLeak(_ text: String) -> Bool {
+    let range = NSRange(text.startIndex..., in: text)
+    for m in connectionString.matches(in: text, range: range) {
+        guard let r = Range(m.range(at: 2), in: text) else { continue }
+        let pw = String(text[r])
+        if pw.hasPrefix("$") || pw.hasPrefix("%") || pw.hasPrefix("{") { continue }
+        if tutorialPasswords.contains(pw.lowercased()) || isPlaceholder(pw) { continue }
+        return true
+    }
+    return false
+}
+
 /// Which issuers this file leaks, transcript rules and code rules together.
 func findCodeKeys(in text: String) -> [String] {
     var vendors = findKeys(in: text)
+    if hasConnectionStringLeak(text) { vendors.append("Database") }
     let range = NSRange(text.startIndex..., in: text)
     for (vendor, re) in codeKeyShapes {
         guard re.firstMatch(in: text, range: range) != nil else { continue }
@@ -218,6 +257,15 @@ private let codeSmells: [CodeSmell] = [
         plain: "A string is turned into running code. Whatever that string contains, this program will do — so anything that can influence the string can make this program run its own code.",
         remedy: "Parse the value instead of executing it. JSON.parse for data; a lookup table for a choice between known behaviors.",
         languages: scripting),
+    CodeSmell(
+        rule: "curl-pipe-shell",
+        title: "A script downloads code and runs it in one motion",
+        severity: .high,
+        pattern: try! NSRegularExpression(pattern: #"\b(?:curl|wget)\b[^\n|]{0,120}\|\s*(?:sudo\s+)?(?:ba|z)?sh\b"#),
+        hint: "|",
+        plain: "curl-pipe-to-shell runs whatever the server sends, the moment it arrives — there is no file to inspect, no checksum, and if the download is interrupted, half a script runs. With sudo in the pipe, it does all of that as root. Install scripts ship this pattern because it makes a nice one-liner; that is the whole case for it.",
+        remedy: "Download to a file, read it, then run the file. If the vendor publishes a checksum, check it.",
+        languages: requestHosts),
     CodeSmell(
         rule: "git-remote-with-token",
         title: "A password is embedded in a git remote",
@@ -520,6 +568,53 @@ public func scanCode(at root: String,
             }
         }
 
+        // ── inline passwords in a compose file ─────────────────────────
+        if base.hasPrefix("docker-compose") || base.hasPrefix("compose."),
+           ext == "yml" || ext == "yaml" {
+            let re = try! NSRegularExpression(
+                pattern: ##"(?im)^\s*[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN)[A-Z0-9_]*\s*[:=]\s*['"]?([^\s'"#${%]{4,})"##)
+            let hits = re.matches(in: text, range: NSRange(text.startIndex..., in: text)).filter { m in
+                guard let r = Range(m.range(at: 1), in: text) else { return false }
+                let v = String(text[r])
+                return !tutorialPasswords.contains(v.lowercased()) && !isPlaceholder(v)
+            }
+            if !hits.isEmpty {
+                findings.append(Finding(
+                    rule: "compose-inline-password", layer: "code", severity: .high,
+                    title: "Passwords written into a compose file",
+                    where_: display(path),
+                    evidence: "\(hits.count) inline credential value(s) under PASSWORD/SECRET/TOKEN keys",
+                    remedy: "Move the values to an env file that .gitignore covers, and reference them: ${VAR}. Compose reads .env automatically.",
+                    validation: "The compose file carries ${VAR} references, not values.",
+                    plain: "This file describes how your services start, and the passwords they start with are typed straight into it. Compose files are committed almost by definition — they are the setup instructions — so these values travel with every copy of the project.",
+                    verified: true, fix: nil,
+                    guidance: NextSteps(title: "Reference the secrets instead of writing them",
+                        steps: [
+                            "Create a .env file next to the compose file and move each value into it.",
+                            "Replace each value in the compose file with ${THE_VAR_NAME} — compose fills them in automatically.",
+                            "Add .env to .gitignore, and check the compose file's history: if it was ever committed with the values in it, rotate them.",
+                        ])))
+            }
+        }
+
+        // ── dependencies fetched outside the registry ──────────────────
+        if base == "package.json", walker.level <= 2 {
+            let re = try! NSRegularExpression(
+                pattern: #""[^"]+"\s*:\s*"(?:git\+|github:|git://|https?://(?!registry\.))[^"]*""#)
+            let n = re.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+            if n > 0, text.contains("\"dependencies\"") || text.contains("\"devDependencies\"") {
+                findings.append(Finding(
+                    rule: "git-url-dependency", layer: "code", severity: .low,
+                    title: "\(n == 1 ? "A dependency comes" : "\(n) dependencies come") straight from a URL",
+                    where_: display(path),
+                    evidence: "\(n) dependency value(s) point at git or http URLs rather than the registry",
+                    remedy: "Prefer registry versions, or pin the URL to a full commit hash so the code cannot change under you.",
+                    validation: "Dependency values are registry versions or hash-pinned URLs.",
+                    plain: "Packages from the registry are what everyone else installs and are integrity-checked against the lockfile. A dependency pointing at a URL is whatever that URL serves at install time — if the branch moves or the account is taken over, the next install is different code and looks identical.",
+                    verified: true, fix: nil, guidance: nil))
+            }
+        }
+
         // ── the dangerous shapes ───────────────────────────────────────
         //
         // ⚠️ NOT IN GENERATED CODE. A minified bundle contains `eval(str)`
@@ -565,6 +660,88 @@ public func scanCode(at root: String,
     }
 
     return ScanResult(findings: sortedBySeverity(findings), toolsFound: [name], filesRead: filesRead)
+}
+
+// ── the repository's history, on request ───────────────────────────────
+
+/**
+ Search history for secrets that a scan of today's files cannot see.
+
+ ⚠️ A BUTTON, NOT A DEFAULT. `git log` over every commit of a real repository is
+ seconds to minutes of work, and the everyday scan has to stay something people
+ run without thinking about it. This runs when the deep-scan toggle is on.
+
+ Two questions, both answered by git itself rather than by walking blobs:
+ - was a secrets-shaped FILE ever added, even if deleted since? (`--diff-filter=A
+   --name-only` over all history — one command, fast)
+ - did key-shaped TEXT ever appear in a diff? (pickaxe, one pass per hint, with
+   hints specific enough that "task-" does not light up "sk-")
+ */
+public func scanGitHistory(at root: String, isCancelled: () -> Bool = { false }) -> [Finding] {
+    guard FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent(".git"))
+    else { return [] }
+    var findings: [Finding] = []
+    let name = (root as NSString).lastPathComponent
+
+    // Files ever added whose name is the finding.
+    if let out = run("/usr/bin/git", ["-C", root, "log", "--all", "--diff-filter=A",
+                                      "--name-only", "--format="], timeout: 60) {
+        let everAdded = Set(out.split(separator: "\n").map(String.init)).filter { line in
+            let base = (line as NSString).lastPathComponent
+            let ext = (base as NSString).pathExtension.lowercased()
+            return base == ".env" || base.hasPrefix(".env.") && !envIsTemplate(base)
+                || secretFileNames.contains(base) || secretFileExtensions.contains(ext)
+        }
+        // What ls-files already reports today is covered by secrets-committed;
+        // history-only entries are the ones nothing else can see.
+        let trackedNow = Set((run("/usr/bin/git", ["-C", root, "ls-files"], timeout: 30) ?? "")
+            .split(separator: "\n").map(String.init))
+        let historyOnly = everAdded.subtracting(trackedNow).sorted()
+        if !historyOnly.isEmpty {
+            findings.append(Finding(
+                rule: "secrets-in-history", layer: "code", severity: .critical,
+                title: "\(historyOnly.count) secrets \(historyOnly.count == 1 ? "file was" : "files were") committed and later deleted",
+                where_: name,
+                evidence: historyOnly.prefix(6).joined(separator: ", ")
+                    + (historyOnly.count > 6 ? ", and \(historyOnly.count - 6) more" : ""),
+                remedy: "Rotate everything they held, then remove them from history with git filter-repo and force-push. The deleting commit did not remove them.",
+                validation: "git log --all --diff-filter=A --name-only lists no secrets files.",
+                plain: "These files are gone from the folder and still in the repository — deleting a file adds a commit on top; it does not take the file out of the ones underneath. Anyone with a clone can check out the commit before the deletion and read them. This is the leak a scan of today's files cannot see, which is what the deep scan is for.",
+                verified: true, fix: nil,
+                guidance: NextSteps(title: "History is append-only, so the keys are the fix",
+                    steps: [
+                        "Rotate every credential those files held, at whatever issued it — do this first, because everything after it is cleanup.",
+                        "Remove the files from history: `git filter-repo --invert-paths --path <file>` and force-push.",
+                        "Tell anyone with a clone to re-clone; their copy keeps the old history until they do.",
+                    ])))
+        }
+    }
+
+    // Key-shaped text anywhere in the diffs.
+    if !isCancelled() {
+        let pickaxeHints = ["sk-ant-", "sk-proj-", "ghp_", "AKIA", "glpat-", "sk_live_", "dop_v1_"]
+        var hit: [String] = []
+        for hint in pickaxeHints {
+            if isCancelled() { break }
+            guard let out = run("/usr/bin/git", ["-C", root, "log", "--all", "-S", hint,
+                                                 "--format=%H"], timeout: 60),
+                  !out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            hit.append(hint)
+        }
+        if !hit.isEmpty {
+            findings.append(Finding(
+                rule: "keys-in-history", layer: "code", severity: .high,
+                title: "Key-shaped values appear in this repository's history",
+                where_: name,
+                evidence: "commits touch text beginning " + hit.joined(separator: ", "),
+                remedy: "Find them with `git log --all -S <prefix> -p`, rotate what is live, then decide whether the history is worth rewriting.",
+                validation: "The pickaxe search returns no commits after a rewrite.",
+                plain: "At some point, text shaped like an API key was added to or removed from a file in this repository. Even if no current file holds it, the commits do, and commits travel with every clone. Worth ten minutes with the command in the remedy to see which keys, and whether they still work.",
+                verified: true, fix: nil, guidance: nil))
+        }
+    }
+
+    return findings
 }
 
 // ── git ────────────────────────────────────────────────────────────────

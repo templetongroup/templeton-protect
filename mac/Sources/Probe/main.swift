@@ -39,6 +39,12 @@ t = Date()
 let code = scanCode(at: folder)
 report("code (\(describeCodeTarget(folder).headline))", code, -t.timeIntervalSinceNow)
 
+if ProcessInfo.processInfo.environment["PROTECT_DEEP"] != nil {
+    t = Date()
+    let hist = scanGitHistory(at: folder)
+    report("history", ScanResult(findings: hist, toolsFound: [], filesRead: 0), -t.timeIntervalSinceNow)
+}
+
 // ⚠️ THE EXPORTS ARE THE PART WITH NO TEST AND THE MOST WAYS TO LEAK. A report
 // carrying the key it found has copied that key somewhere new.
 let all = ScanResult(findings: machine.findings + installs.findings + code.findings,
