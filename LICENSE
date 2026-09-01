@@ -1,3 +1,23 @@
+Templeton Protect — licensing
+==============================
+
+The scanning ENGINE and command-line tool are MIT-licensed, under the terms
+below. This is everything that finds and explains a finding: mac/Sources/
+ProtectCore, mac/Sources/CLI, the exports, and the test suites.
+
+The RESIDENT APPLICATION LAYER — the menu bar presence, scheduled scanning and
+the transcript watcher, in mac/Sources/Protect/Resident.swift, Watcher.swift and
+Plan.swift — is part of Protect+, a commercial product. It is published here to
+be read and audited; running it as a service is offered by subscription. See
+docs/PRODUCT.md.
+
+Nothing in the MIT engine depends on the resident layer, and the free scanner is
+complete on its own. This split is stated here, in the first paragraph, on
+purpose — an "open source" badge over a paid core is the misread this project
+refuses to earn.
+
+--------------------------------------------------------------------------------
+
 MIT License
 
 Copyright (c) 2026 Templeton Technologies

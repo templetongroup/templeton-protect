@@ -625,6 +625,11 @@ public func scanCode(at root: String,
         // credential baked into a bundle has shipped to every browser that
         // loaded it, which makes it worse rather than less interesting.
         if looksGenerated(base, text) { continue }
+        // ⚠️ A DANGEROUS SHAPE IN A TEST IS USUALLY THE TEST OF THE SHAPE.
+        // Every fixture in this project's own suite is a real curl-pipe or SQL
+        // concatenation on purpose. Reported, so a genuinely dangerous test
+        // still surfaces, but a notch quieter — the same call the key rule makes.
+        let inTest = looksLikeTestFile(path)
         for smell in codeSmells {
             guard smell.languages.contains(ext) else { continue }
             if !smell.hint.isEmpty && !text.contains(smell.hint) { continue }
@@ -634,8 +639,9 @@ public func scanCode(at root: String,
             let line = text[text.startIndex..<r.lowerBound].filter { $0 == "\n" }.count + 1
             let total = smell.pattern.numberOfMatches(in: text, range: range)
             findings.append(Finding(
-                rule: smell.rule, layer: "code", severity: smell.severity,
-                title: smell.title,
+                rule: smell.rule, layer: "code",
+                severity: inTest ? .low : smell.severity,
+                title: inTest ? "\(smell.title) — in a test file" : smell.title,
                 where_: "\(display(path)):\(line)",
                 // ⚠️ REDACTED, LIKE EVERYTHING ELSE THIS APP PRINTS. A git remote
                 // with a token in it is both the finding and the secret, and

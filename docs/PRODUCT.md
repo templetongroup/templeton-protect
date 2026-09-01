@@ -97,3 +97,32 @@ Not a platform. One scan, on one thing you already have access to.
 - Have a model rank the findings and write the report as if for a client who isn't technical.
 - Read it yourself and ask: would I send this, and would they pay for it?
 That's a few days, it uses your own tenancy so nobody is exposed, and it answers the only question that matters before any of the above is worth building. Note that nothing is installed yet — the box has ClamAV but no Semgrep, Trivy or Gitleaks, so step zero is picking the first scanner and installing it.
+
+
+---
+
+## Update — 1 Sep 2026: built, and the split made concrete
+
+The three-scan app is built and shipping. The open-core decision above is now
+implemented rather than argued:
+
+- **The engine is MIT** — `ProtectCore`, the CLI, the exports, the tests. It is
+  the whole scanner; the free download finds everything the paid one finds.
+- **The resident layer is Protect+** — `Resident.swift`, `Watcher.swift`,
+  `Plan.swift`: the menu bar, the schedule, the live transcript watcher. It does
+  not find anything new; it runs the finding *for you, continuously*. That is the
+  honest version of the split — the paid thing is a different thing, not a
+  withheld piece of the free one.
+- The split is stated in the **first paragraph of `LICENSE`**, which is the exact
+  thing the Stirling-PDF misread (17 Aug) taught us to do. `Plan.current`
+  defaults to `.plus` because there is no store yet; flipping it to `.free` is the
+  launch decision, and it waits on the payment rails, not on an agent.
+
+What the scans grew: an **agent-permissions audit** (MCP servers, allowlists,
+hooks, approval policies — the moat, TG-284), **history + deltas** so a re-scan
+says what changed, **connection strings and infrastructure secrets**, and a
+**git-history** pass. All pinned by a Swift test suite (TG-291) that caught a
+watcher segfault before it shipped.
+
+Still open before this sells: the payment rails and licensing server (the store
+behind `Plan`), auto-update (TG-286), and the public-repo cutover (TG-282).
