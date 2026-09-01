@@ -59,3 +59,34 @@ For anywhere the company has to be said too.
 Tracking is set slightly negative (−0.015 em). Heavy geometric caps at default
 spacing read as a row of separate letters rather than one word; pulling them
 together is what makes it a mark.
+
+## Lockups — swirl + text, no box
+
+The text wordmarks above with the champagne swirl set to their left. This is
+what the **app itself** uses in its header (`mac/Resources/protect-lockup.png`
+is a copy of the champagne-on-transparent full-name version).
+
+### `PROTECT` — 1600 × 420
+- `lockup-protect-champagne-transparent.png`
+- `lockup-protect-champagne-on-navy.png`
+- `lockup-protect-navy-transparent.png`
+
+### `TEMPLETON PROTECT` — 2000 × 360
+- `lockup-templeton-protect-champagne-transparent.png`
+- `lockup-templeton-protect-champagne-on-navy.png`
+- `lockup-templeton-protect-navy-transparent.png`
+
+⚠️ **The swirl is masked in its own bitmap, then drawn.** Filling and masking
+directly on the final canvas looks right and is not: `.destinationIn` erases the
+destination wherever the mark is transparent, so it punches a hole through the
+background inside the mark's rect and leaves the swirl sitting in a transparent
+square. The first render of these did exactly that.
+
+⚠️ **The swirl is sized from the type's cap height, not from the canvas.**
+`PROTECT` and `TEMPLETON PROTECT` are set at very different point sizes, so a
+mark pinned to a fraction of the frame looks correct beside one and oversized
+beside the other.
+
+⚠️ **Never render the lockup as a template image.** It is champagne on
+transparency and the swirl carries the same colour as the type; a template
+rendering mode flattens the two into one silhouette and loses the rings.

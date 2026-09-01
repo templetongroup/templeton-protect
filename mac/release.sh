@@ -38,6 +38,7 @@ cp Resources/index.html "$APP/Contents/Resources/index.html"
 cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
+cp Resources/protect-lockup.png "$APP/Contents/Resources/protect-lockup.png"
 
 # ⚠️ SwiftPM DOES NOT COMPILE .metal FILES. Declaring them as a resource copies
 # the SOURCE into the bundle and nothing else — `ShaderLibrary.default` then

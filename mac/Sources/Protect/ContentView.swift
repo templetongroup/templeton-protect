@@ -639,10 +639,34 @@ struct ContentView: View {
 
     private var pitch: some View {
         VStack(alignment: .leading, spacing: Space.md) {
-            Text("TEMPLETON PROTECT")
-                .font(.system(size: FontSize.caption, weight: .semibold))
-                .tracking(1.6)
-                .foregroundStyle(Ink.accent)
+            /*
+             The wordmark, rather than the name set as letter-spaced text.
+
+             ⚠️ THE ASSET IS A CHAMPAGNE LOCKUP ON TRANSPARENCY, so it is drawn
+             as-is and never tinted — the swirl inside it carries the same
+             champagne as the type, and re-colouring it through a template
+             rendering mode would flatten the two into one silhouette and lose
+             the rings. Same rule as the Dock icon: the mark is lifted, never
+             redrawn.
+
+             ⚠️ AND A TEXT FALLBACK STAYS. The mark is a bundled resource, so a
+             missing file should not happen — but a product name that silently
+             vanishes from its own opening screen is worse than a plain word.
+             */
+            if let lockup = Bundle.main.image(forResource: "protect-lockup") {
+                Image(nsImage: lockup)
+                    .resizable().scaledToFit()
+                    // ⚠️ 34, NOT 26. At the eyebrow's old size the swirl's inner
+                    // rings collapse into a filled dot — the mark stops being the
+                    // mark. This is the smallest height at which they still read.
+                    .frame(height: 34)
+                    .accessibilityLabel("Templeton Protect")
+            } else {
+                Text("TEMPLETON PROTECT")
+                    .font(.system(size: FontSize.caption, weight: .semibold))
+                    .tracking(1.6)
+                    .foregroundStyle(Ink.accent)
+            }
             Text("Scan your Mac, your assistants,\nand your code.")
                 .font(.system(size: FontSize.display, weight: .semibold, design: .rounded))
                 .foregroundStyle(Ink.primary)
