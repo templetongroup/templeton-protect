@@ -1,11 +1,10 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// ⚠️ NO TEST TARGET YET. This said XCTest was absent because the machine had only
-// the Command Line Tools; that stopped being true — xcode-select now points at
-// /Applications/Xcode.app, so a Swift test target is possible and worth adding.
-// The scan rules are pinned by the TypeScript suite in the parent directory,
-// which is the same logic; the Checks executable guards the Swift-only parts.
+// The Swift test target exists now (TG-291). The TypeScript suite pins the
+// installations rules it was written against; everything added since 2026-08-31
+// is pinned HERE, where the rules actually live, rather than by porting each
+// rule to a second language so a copy of it can be tested.
 let package = Package(
     name: "Protect",
     platforms: [.macOS(.v12)],
@@ -13,5 +12,8 @@ let package = Package(
         .target(name: "ProtectCore", path: "Sources/ProtectCore"),
         .executableTarget(name: "Protect", dependencies: ["ProtectCore"], path: "Sources/Protect"),
         .executableTarget(name: "Probe", dependencies: ["ProtectCore"], path: "Sources/Probe"),
+        // The command-line face of the same engine — scan in CI, gate a commit.
+        .executableTarget(name: "protect-cli", dependencies: ["ProtectCore"], path: "Sources/CLI"),
+        .testTarget(name: "ProtectCoreTests", dependencies: ["ProtectCore"], path: "Tests/ProtectCoreTests"),
     ]
 )
