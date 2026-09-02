@@ -1,3 +1,9 @@
+> ⚠️ **Commit a0756a4 says "Fixes TG-303" and that is wrong.** The work in it is
+> [TG-315](https://linear.app/templetongroup/issue/TG-315) — the redaction fix
+> rewriting a transcript on one click. TG-303 is the notifications issue and was
+> closed a day earlier. I wrote the reference before filing the issue, which is
+> the same mistake this file already records once; file it first, then commit.
+
 # Where Templeton Protect stands
 
 Updated 2026-08-31, at the end of the session that added the other two scans.
