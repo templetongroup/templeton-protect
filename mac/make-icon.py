@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Protect's Dock icon: Champagne body, Midnight Navy swirl.
+"""Protect's Dock icon: deep navy body, champagne swirl.
 
-⚠️ NOT A NAVY BODY — that is Radiant's icon in a different blue, and side by
-side in the Dock the two were indistinguishable. The mark is shared on purpose;
-the body colour is what separates the family members. Tony picked champagne
-with the navy swirl — the strongest contrast pair in the palette, and it reads
-at 16pt in the menu bar as well as at 1024.
+⚠️ THE FAMILY IS TOLD APART BY THE BODY COLOUR, NOT THE MARK. The swirl is
+shared on purpose, so the body is the only thing separating Protect from
+Radiant (#5377B3) and AiOS (#857F5E) at 32pt in the Dock.
+
+⚠️ THIS WAS CHAMPAGNE-ON-NAVY UNTIL 2026-09-02, and it was that way because an
+earlier navy body read as Radiant. Tony asked for the inversion; what makes it
+survivable is the *value* gap — Radiant is a mid periwinkle and this is a near
+black navy, so they separate by lightness even where hue does not help. Do not
+lighten it toward Radiant's blue. If the two ever start colliding in the Dock
+again, the fix is a darker body, not a different mark.
 
 ⚠️ THE SWIRL IS LIFTED, NEVER RE-RENDERED. Radiant's icon was once rebuilt by
 re-drawing the mark through a blur/threshold pass whose radius scaled with the
@@ -25,8 +30,10 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 CANVAS = 1024
-CHAMPAGNE = (247, 215, 148)         # #F7D794  the body
-NAVY = (25, 42, 86)                 # #192A56  the swirl
+CHAMPAGNE = (247, 215, 148)         # #F7D794  the swirl
+# The body. #0B1329 is the app's own darkest surface, and the point of choosing
+# it over #192A56 is distance from Radiant's #5377B3 at Dock size.
+NAVY = (11, 19, 41)                 # #0B1329  the body
 BODY = int(round(0.896 * CANVAS))
 MARK = 694
 
@@ -67,9 +74,9 @@ def main() -> None:
     print(f"  lifted swirl {mark.size[0]}x{mark.size[1]} from {src.name}")
 
     mark = mark.resize((MARK, MARK), Image.LANCZOS)
-    body = Image.new("RGBA", (BODY, BODY), (*CHAMPAGNE, 255))
+    body = Image.new("RGBA", (BODY, BODY), (*NAVY, 255))
     body.putalpha(squircle(BODY))
-    ink = Image.new("RGBA", mark.size, (*NAVY, 255))
+    ink = Image.new("RGBA", mark.size, (*CHAMPAGNE, 255))
     ink.putalpha(mark)
     body.alpha_composite(ink, ((BODY - MARK) // 2,) * 2)
 
@@ -77,6 +84,29 @@ def main() -> None:
     icon.paste(body, ((CANVAS - BODY) // 2,) * 2, body)
     icon.save(HERE / "icon-1024.png")
     print(f"  wrote icon-1024.png  body {BODY}  swirl {MARK}")
+    write_icns(icon)
+
+
+def write_icns(icon: Image.Image) -> None:
+    """Protect.icns, from the same run.
+
+    ⚠️ THE .icns IS WHAT SHIPS, NOT THE PNG. build.sh and release.sh copy
+    Protect.icns and never look at icon-1024.png, so regenerating the png alone
+    changes nothing you can see — the app keeps its old icon and the change
+    looks like it silently failed. (Then it looks like it failed a second time,
+    because a running app holds on to its old Dock icon until you quit it.)
+    """
+    import shutil, subprocess, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        iconset = Path(tmp) / "Protect.iconset"
+        iconset.mkdir()
+        for px in (16, 32, 128, 256, 512):
+            icon.resize((px, px), Image.LANCZOS).save(iconset / f"icon_{px}x{px}.png")
+            icon.resize((px * 2, px * 2), Image.LANCZOS).save(iconset / f"icon_{px}x{px}@2x.png")
+        out = Path(tmp) / "Protect.icns"
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out)], check=True)
+        shutil.copy(out, HERE / "Protect.icns")
+    print("  wrote Protect.icns")
 
 
 if __name__ == "__main__":
