@@ -698,6 +698,24 @@ recreate with:
   the list, so a card below the fold cannot be reached from a script. Verifying
   anything down there means doing it by hand.
 
+## Licence keys have two shapes
+
+- **TP2** is what gets minted now: a term in days, stamped when the customer
+  first enters it, plus a void date. **TP1** was an absolute end date and is
+  still read, permanently — keys already sold cannot be recalled, so it is a
+  second shape and not a migration.
+- ⚠️ **Never remove the void date, and never read a missing one as "no limit".**
+  The activation stamp lives on the customer's Mac and can be cleared; the void
+  date is inside the signed key and cannot. Without it, one leaked key is a free
+  subscription forever for anybody who clears their stamp. A TP2 payload with no
+  `n` is refused.
+- ⚠️ **A TP2 key entered into 0.7.0 or older is refused**, because those builds
+  only parse TP1. Nothing may be minted for sale until an app that understands
+  TP2 is the one people download.
+- The activation stamp is keyed by a hash of the licence, never the licence.
+  Preferences are readable by anybody logged in here, and a working key sitting
+  in a plist is a subscription somebody can copy.
+
 ## Still open
 
 - Tony to rotate the keys the scan found (TG-281).

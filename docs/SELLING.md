@@ -23,10 +23,15 @@ the batch id and the expiry date. Upload it as the store's key list.
 The file is gitignored, and it should stay out of every repo, backup folder and
 chat window. Every line in it is a working subscription that anybody can redeem.
 
-⚠️ **The clock starts at minting, not at purchase.** The expiry is an absolute
-date baked into the key. Mint 300 keys today with a one-year term and the one
-sold next August is worth a month. Mint small batches, monthly, and top the store
-up — the tool takes two seconds.
+**The clock starts when the customer enters the key, not when you mint it.** A
+batch can sit in the store without losing value, so mint as much inventory as you
+like.
+
+⚠️ **Every key still dies two years past its term, whatever its activation date.**
+That is not an oversight to be tidied up later — it is the only thing stopping a
+leaked key from being a free subscription forever. The activation date is stamped
+on the customer's own Mac and anybody determined enough can clear it; the void
+date is inside the signed key and cannot be moved.
 
 ## Issuing one by hand
 
@@ -40,27 +45,31 @@ the expiry — but it makes a key traceable if it turns up somewhere public.
 
 ## What renewal costs us
 
-A renewed subscription needs a **new key**, because the old one's date cannot
-move. Month one, that is a person emailing and getting one back. It does not stay
-that way, and there are two ways out:
+A renewed subscription needs a **new key**, because a key's term is fixed once it
+is signed. Month one, that is a person emailing and getting one back — the store
+tells you who renewed, `issue` takes two seconds.
 
-1. **Automate the current design.** A webhook on the store's renewal event mints
-   a key and emails it. Straightforward, and it means the signing key lives on a
-   server. That is the trade: convenience against a secret that can no longer
-   only exist on one Mac.
-2. **Make the term start at activation.** The key would carry a duration rather
-   than a date, and the app would stamp the start on first use. Batches would stop
-   ageing on the shelf and renewal would still need a new key, but nothing would
-   need to be online. It needs a new key version and an app that understands it.
+Automating it means a webhook on the store's renewal event minting and emailing a
+key, and that puts the signing key on a web server. It is the one thing here
+worth being slow about: a compromised server would mean minting rights over every
+future subscription, and the private key currently exists on exactly one Mac.
+Worth doing when the volume justifies it, not before.
 
-Neither is built. (2) is the better shape and should be decided before the store
-opens, because it changes what a sold key looks like. See TG-300.
+## The two key shapes
+
+**TP2** is what `issue` and `batch` mint: a term in days plus a void date. The
+term starts on first use.
+
+**TP1** was an absolute end date, and the app still reads it, permanently. Keys
+already in somebody's hands cannot be recalled, so this is not a migration — it
+is a second shape that has to keep working. See TG-300.
 
 ## Before the first sale
 
 - [ ] Store account exists (Paddle or Lemon Squeezy — merchant of record, so VAT
       and sales tax are theirs to handle, not ours).
-- [ ] Decide absolute-expiry vs term-from-activation. This changes the keys.
+- [ ] Ship an app that understands TP2 **before** minting anything for sale.
+      Version 0.8.0 or later. A TP2 key entered into an older copy is refused.
 - [ ] Point `Store.checkout` at the hosted checkout instead of the product page.
 - [ ] Upload the first batch, buy one with a real card, and redeem the key in a
       clean install. Not a test-mode order — the whole path, once, for real.

@@ -64,6 +64,23 @@ func unb64url(_ s: String) -> Data? {
     return Data(base64Encoded: t)
 }
 
+
+/*
+ A TP2 payload: a term in days, plus the date past which the key is worthless
+ whatever its term says.
+
+ ⚠️ THE BACKSTOP IS NOT THE EXPIRY. It is the ceiling that stops a leaked key
+ living forever — the activation stamp is on the customer's Mac and can be
+ cleared, so without this a key posted publicly hands a fresh term to everybody
+ who clears it, permanently. It has to outlast a full term begun on the last day
+ the key could plausibly sell, so it is the term plus a generous shelf life
+ rather than the term itself.
+ */
+func tp2Payload(id: String, days: Int, shelfDays: Int) -> String {
+    let notAfter = Int(Date().addingTimeInterval(Double(days + shelfDays) * 86_400).timeIntervalSince1970)
+    return #"{"e":"\#(id)","d":\#(days),"n":\#(notAfter)}"#
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
     print("usage: generate | issue <email> <days> | batch <count> <days> [tag] | verify <key>")
@@ -99,21 +116,25 @@ case "issue":
         print("no signing key — run: swift scripts/licence-tool.swift generate"); exit(1)
     }
     let email = args[1]
-    let expires = Int(Date().addingTimeInterval(Double(days) * 86_400).timeIntervalSince1970)
     // Compact on purpose: this string gets pasted by a human.
-    let payload = #"{"e":"\#(email)","x":\#(expires)}"#
+    let payload = tp2Payload(id: email, days: days, shelfDays: 730)
     let body = Data(payload.utf8)
     guard let sig = try? key.signature(for: body) else { print("signing failed"); exit(1) }
-    print("TP1-\(b64url(body)).\(b64url(sig))")
+    print("TP2-\(b64url(body)).\(b64url(sig))")
+    print("")
+    print("\(days) days, counted from the first time it is entered — not from now.")
+    print("Void after \(Date().addingTimeInterval(Double(days + 730) * 86_400).formatted(date: .abbreviated, time: .omitted)) whatever happens.")
 
 /*
  Mint a stack of keys for the store to hand out.
 
- ⚠️ THE CLOCK STARTS AT MINTING, NOT AT PURCHASE. A key carries an absolute
- expiry date, so one that sits unsold in the store for five months sells with
- seven months left on it. Mint in small, dated batches and top the store up —
- do not mint a year of inventory. Making the term start at activation instead
- needs a new key version and an app that understands it (TG-300).
+ The clock starts when the customer enters the key, not now, so a batch can sit
+ in the store without losing value. That is what TP2 is for.
+
+ ⚠️ THEY STILL DIE EVENTUALLY, and on purpose. Each key is void two years past
+ its term whatever its activation date, because the activation stamp lives on
+ the customer's Mac and can be cleared — without a ceiling, one leaked key is a
+ free subscription forever for anybody who clears it.
 
  The `e` field carries a batch id rather than a buyer, because nobody knows who
  the buyer is at minting time. Nothing enforces the email — it is there so a key
@@ -131,19 +152,18 @@ case "batch":
     stamp.formatOptions = [.withFullDate]
     let today = stamp.string(from: Date())
     let tag = args.count >= 4 ? args[3] : today
-    let expiresAt = Date().addingTimeInterval(Double(days) * 86_400)
-    let expires = Int(expiresAt.timeIntervalSince1970)
+    let voidAfter = Date().addingTimeInterval(Double(days + 730) * 86_400)
 
-    var rows = ["key,batch,expires"]
+    var rows = ["key,batch,days,void_after"]
     var minted = 0
     for _ in 0..<count {
         // Short random id: unique enough to trace, and it does not leak how many
         // have been sold by counting upwards in public.
         let id = (0..<6).map { _ in "abcdefghjkmnpqrstuvwxyz23456789".randomElement()! }
-        let payload = #"{"e":"\#(tag)-\#(String(id))","x":\#(expires)}"#
+        let payload = tp2Payload(id: "\(tag)-\(String(id))", days: days, shelfDays: 730)
         let body = Data(payload.utf8)
         guard let sig = try? key.signature(for: body) else { print("signing failed"); exit(1) }
-        rows.append("TP1-\(b64url(body)).\(b64url(sig)),\(tag)-\(String(id)),\(expiresAt.ISO8601Format())")
+        rows.append("TP2-\(b64url(body)).\(b64url(sig)),\(tag)-\(String(id)),\(days),\(voidAfter.ISO8601Format())")
         minted += 1
     }
 
@@ -151,7 +171,8 @@ case "batch":
         .appendingPathComponent("licences-\(tag).csv")
     do { try rows.joined(separator: "\n").appending("\n").write(to: out, atomically: true, encoding: .utf8) }
     catch { print("could not write \(out.path): \(error)"); exit(1) }
-    print("\(minted) keys, each good until \(expiresAt.formatted(date: .abbreviated, time: .omitted))")
+    print("\(minted) keys, each worth \(days) days from the moment it is entered.")
+    print("They do not age on the shelf. All are void after \(voidAfter.formatted(date: .abbreviated, time: .omitted)).")
     print(out.path)
     print("")
     print("Upload that file as the store's licence key list. Keep it out of git —")
@@ -164,13 +185,18 @@ case "verify":
         print("no signing key"); exit(1)
     }
     let text = args[1]
-    guard text.hasPrefix("TP1-") else { print("not a Protect licence"); exit(1) }
+    guard text.hasPrefix("TP1-") || text.hasPrefix("TP2-") else { print("not a Protect licence"); exit(1) }
     let parts = text.dropFirst(4).split(separator: ".")
     guard parts.count == 2, let body = unb64url(String(parts[0])), let sig = unb64url(String(parts[1])),
           key.publicKey.isValidSignature(sig, for: body) else {
         print("INVALID"); exit(1)
     }
     print("valid: \(String(data: body, encoding: .utf8) ?? "?")")
+    if let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+       let days = obj["d"] as? Double, let n = obj["n"] as? Double {
+        print("  \(Int(days)) days from whenever it is first entered")
+        print("  void after \(Date(timeIntervalSince1970: n).formatted(date: .abbreviated, time: .omitted))")
+    }
 
 default:
     print("unknown command \(command)"); exit(2)

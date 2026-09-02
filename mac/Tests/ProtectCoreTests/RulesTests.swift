@@ -862,6 +862,124 @@ final class OffensiveHarnessTests: XCTestCase {
 }
 
 #if PROTECT_PLUS
+/// The shape of a sold key: a term that starts when the customer does.
+final class ActivationTermTests: XCTestCase {
+    private let signer = Curve25519.Signing.PrivateKey()
+
+    private func b64url(_ d: Data) -> String {
+        Data(d).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private func key(_ prefix: String, _ payload: String) -> String {
+        let body = Data(payload.utf8)
+        let sig = try! signer.signature(for: body)
+        return "\(prefix)-\(b64url(body)).\(b64url(sig))"
+    }
+
+    private func tp2(days: Int, notAfterDays: Int) -> String {
+        let n = Int(Date().addingTimeInterval(Double(notAfterDays) * 86_400).timeIntervalSince1970)
+        return key("TP2", #"{"e":"batch-a","d":\#(days),"n":\#(n)}"#)
+    }
+
+    /// ⚠️ THE WHOLE POINT. A key minted long before it sold is worth its full
+    /// term on the day it is entered, not what is left of a date set at minting.
+    func testTheTermStartsWhenTheCustomerActivatesIt() {
+        let k = tp2(days: 365, notAfterDays: 1095)
+        let p = LicenceKey.promise(of: k, publicKey: signer.publicKey)
+        XCTAssertNotNil(p)
+        // Activated today, five months after it was minted: still a full year.
+        let activated = Date()
+        let expiry = p!.expiry(activatedAt: activated)
+        XCTAssertEqual(expiry.timeIntervalSince(activated) / 86_400, 365, accuracy: 0.01)
+    }
+
+    /// ⚠️ THE CEILING THAT STOPS A LEAKED KEY LIVING FOREVER. The activation
+    /// stamp is on the customer's Mac and can be cleared; this cannot.
+    func testTheBackstopWinsOverTheTerm() {
+        let k = tp2(days: 365, notAfterDays: 30)
+        let p = LicenceKey.promise(of: k, publicKey: signer.publicKey)!
+        let expiry = p.expiry(activatedAt: Date())
+        XCTAssertLessThan(expiry.timeIntervalSinceNow / 86_400, 31)
+    }
+
+    /// A term with no ceiling is refused rather than read as unlimited.
+    func testATermWithoutABackstopIsNotAKey() {
+        let k = key("TP2", #"{"e":"batch-a","d":365}"#)
+        XCTAssertNil(LicenceKey.promise(of: k, publicKey: signer.publicKey))
+    }
+
+    func testAZeroDayTermIsNotAKey() {
+        let n = Int(Date().timeIntervalSince1970) + 99
+        XCTAssertNil(LicenceKey.promise(of: key("TP2", #"{"e":"a","d":0,"n":\#(n)}"#),
+                                        publicKey: signer.publicKey))
+    }
+
+    /// ⚠️ KEYS ALREADY SOLD CANNOT BE RECALLED, so the old fixed-date shape is
+    /// read for good. This is not a migration.
+    func testTheOldFixedDateKeysStillWork() {
+        let x = Int(Date().addingTimeInterval(86_400 * 10).timeIntervalSince1970)
+        let k = key("TP1", #"{"e":"someone@example.com","x":\#(x)}"#)
+        let p = LicenceKey.promise(of: k, publicKey: signer.publicKey)
+        XCTAssertNotNil(p)
+        guard case .fixed(let d)? = p?.term else { return XCTFail("expected a fixed term") }
+        // Activation cannot move a fixed date, whenever it happened.
+        XCTAssertEqual(p!.expiry(activatedAt: Date().addingTimeInterval(-99_999)), d)
+        XCTAssertEqual(LicenceKey.contents(of: k, publicKey: signer.publicKey)?.email,
+                       "someone@example.com")
+    }
+
+    func testAForgedTermIsRefused() {
+        var k = tp2(days: 365, notAfterDays: 1095)
+        k.removeLast(4)
+        k += "AAAA"
+        XCTAssertNil(LicenceKey.promise(of: k, publicKey: signer.publicKey))
+    }
+
+    /// The stamp is written under a hash, because preferences are readable by
+    /// anybody logged in and a working key sitting in a plist is a subscription.
+    func testTheActivationStampNeverHoldsTheKeyItself() {
+        let d = UserDefaults(suiteName: "activation-\(UUID().uuidString)")!
+        Licensing.storageOverride = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("act-\(UUID().uuidString)")
+        defer { Licensing.storageOverride = nil }
+        let k = tp2(days: 365, notAfterDays: 1095)
+        _ = Licensing.activated(k, defaults: d)
+        let dump = d.dictionaryRepresentation().keys.joined(separator: " ")
+        XCTAssertFalse(dump.contains(k))
+        XCTAssertTrue(dump.contains("activated-"))
+    }
+
+    /// Entering the same key again does not restart the term.
+    func testActivationIsRememberedRatherThanReset() {
+        let d = UserDefaults(suiteName: "activation-\(UUID().uuidString)")!
+        Licensing.storageOverride = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("act-\(UUID().uuidString)")
+        defer { Licensing.storageOverride = nil }
+        let k = tp2(days: 365, notAfterDays: 1095)
+        let first = Licensing.activated(k, now: Date().addingTimeInterval(-86_400 * 30), defaults: d)
+        let second = Licensing.activated(k, now: Date(), defaults: d)
+        XCTAssertEqual(first.timeIntervalSince1970, second.timeIntervalSince1970, accuracy: 1)
+    }
+
+    /// A renewal is a different key, so it starts its own clock.
+    func testARenewalStartsItsOwnClock() {
+        let d = UserDefaults(suiteName: "activation-\(UUID().uuidString)")!
+        Licensing.storageOverride = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("act-\(UUID().uuidString)")
+        defer { Licensing.storageOverride = nil }
+        let old = tp2(days: 365, notAfterDays: 1095)
+        let new = tp2(days: 30, notAfterDays: 1095)
+        let a = Licensing.activated(old, now: Date().addingTimeInterval(-86_400 * 300), defaults: d)
+        let b = Licensing.activated(new, now: Date(), defaults: d)
+        XCTAssertGreaterThan(b.timeIntervalSince(a) / 86_400, 299)
+    }
+}
+#endif
+
+#if PROTECT_PLUS
 final class LicenceSigningTests: XCTestCase {
     /// A throwaway signing key, so the suite never needs the real private half.
     let signer = Curve25519.Signing.PrivateKey()
