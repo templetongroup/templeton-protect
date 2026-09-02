@@ -63,12 +63,21 @@ enum Phase { case idle, scanning, done }
     /// to "is this paid for" rather than two that can disagree.
     func activate(key: String, email: String?) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 8 else {
-            licenceError = "That does not look like a licence key. Check the email from your purchase."
+        // ⚠️ THE SIGNATURE IS THE CHECK. This used to be `count >= 8`, which
+        // meant "aaaaaaaa" bought Protect+ forever. The email and expiry now
+        // come OUT of the signed payload rather than from the person typing —
+        // anything they type that is not signed by the private half is refused.
+        guard let contents = LicenceKey.contents(of: trimmed) else {
+            licenceError = "That key is not valid. Copy it exactly as it appears in your purchase email — it begins with TP1-."
+            return
+        }
+        guard contents.expires > Date() else {
+            licenceError = "That licence expired on \(contents.expires.formatted(date: .abbreviated, time: .omitted)). Renewing issues a new key."
             return
         }
         do {
-            try Licensing.save(License(key: trimmed, email: email, checked: Date(), expires: nil))
+            try Licensing.save(License(key: trimmed, email: contents.email,
+                                       checked: Date(), expires: contents.expires))
             licenceError = nil
             showingLicenceSheet = false
             refreshEntitlement()

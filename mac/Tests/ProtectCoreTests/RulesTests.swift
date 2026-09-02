@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import ProtectCore
 
@@ -825,5 +826,79 @@ final class OffensiveHarnessTests: XCTestCase {
     func testNoHarnessNoFinding() {
         XCTAssertNil(offensiveHarness(in: "npx @scope/agent-runner --scan ./src"))
         XCTAssertNotNil(offensiveHarness(in: "npx T3MP3ST --target example.com"))
+    }
+}
+
+final class LicenceSigningTests: XCTestCase {
+    /// A throwaway signing key, so the suite never needs the real private half.
+    let signer = Curve25519.Signing.PrivateKey()
+
+    func makeKey(email: String, expiresIn days: Double) -> String {
+        let exp = Int(Date().addingTimeInterval(days * 86_400).timeIntervalSince1970)
+        let body = Data(#"{"e":"\#(email)","x":\#(exp)}"#.utf8)
+        let sig = try! signer.signature(for: body)
+        func b(_ d: Data) -> String {
+            d.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        return "TP1-\(b(body)).\(b(sig))"
+    }
+
+    func testAProperlySignedKeyReadsBack() {
+        let key = makeKey(email: "buyer@example.com", expiresIn: 30)
+        let c = LicenceKey.contents(of: key, publicKey: signer.publicKey)
+        XCTAssertEqual(c?.email, "buyer@example.com")
+        XCTAssertTrue(c!.expires > Date())
+    }
+
+    /// ⚠️ The hole this closed: any eight characters used to buy Protect+.
+    func testMadeUpKeysAreRefused() {
+        for junk in ["aaaaaaaa", "TP1-aaaa.bbbb", "", "TEMPLETON-OWNER",
+                     "TP1-" + String(repeating: "A", count: 90)] {
+            XCTAssertNil(LicenceKey.contents(of: junk, publicKey: signer.publicKey),
+                         "accepted \(junk)")
+        }
+    }
+
+    /// ⚠️ A key signed by ANOTHER key must fail — that is the whole scheme.
+    func testAKeyFromADifferentSignerIsRefused() {
+        let key = makeKey(email: "a@b.c", expiresIn: 30)
+        let stranger = Curve25519.Signing.PrivateKey()
+        XCTAssertNil(LicenceKey.contents(of: key, publicKey: stranger.publicKey))
+    }
+
+    /// Editing the payload breaks the signature, so the email and expiry inside
+    /// a valid key cannot be rewritten.
+    func testTamperingWithThePayloadIsCaught() {
+        let key = makeKey(email: "a@b.c", expiresIn: 1)
+        let parts = key.dropFirst(4).split(separator: ".")
+        let forged = "TP1-" + String(parts[0]).replacingOccurrences(of: "e", with: "f")
+            + "." + String(parts[1])
+        XCTAssertNil(LicenceKey.contents(of: forged, publicKey: signer.publicKey))
+    }
+
+    func testAnExpiredKeyStillVerifiesButHasPassed() {
+        let key = makeKey(email: "a@b.c", expiresIn: -1)
+        let c = LicenceKey.contents(of: key, publicKey: signer.publicKey)
+        XCTAssertNotNil(c, "signature is still good")
+        XCTAssertTrue(c!.expires < Date(), "but the period has ended")
+    }
+}
+
+final class TrialStampTests: XCTestCase {
+    /// ⚠️ Clearing the preference alone must not buy another fourteen days.
+    func testClearingTheDefaultsDoesNotResetTheTrial() throws {
+        let suite = "protect.trial.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        addTeardownBlock { d.removePersistentDomain(forName: suite) }
+        try? Licensing.forget()
+
+        let first = Licensing.firstRun(d)
+        d.removeObject(forKey: "firstRunDate")          // the one-line "tip"
+        let after = Licensing.firstRun(d)
+        XCTAssertEqual(first.timeIntervalSince1970, after.timeIntervalSince1970, accuracy: 1,
+                       "the on-disk stamp should have restored the original date")
     }
 }

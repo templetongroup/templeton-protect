@@ -97,6 +97,35 @@ plus `Watcher.swift` and `History.swift` in core so they can be tested, and
   makes the boundary visible; flipping the default to `.free` is the launch
   decision, with the payment rails, and it is Tony's not an agent's.
 
+## Licensing
+
+`License.swift` verifies, `scripts/licence-tool.swift` issues.
+
+- ⚠️ **THE OLD CHECK WAS `count >= 8`.** Anyone could type `aaaaaaaa` and hold
+  Protect+ for good — and the repository is public, so the code saying so was
+  there to read. A key is now `TP1-<payload>.<signature>`, Ed25519 over the
+  payload, verified against `TPLicenceKey` in Info.plist. The email and expiry
+  come OUT of the signed payload; nothing the customer types is trusted.
+- ⚠️ **The stored licence file is re-verified, not trusted.** It sits in
+  Application Support where anyone can edit it. Without re-checking the
+  signature on every entitlement query, forging Protect+ would be editing JSON
+  rather than typing a fake key — easier than the hole it replaced.
+- ⚠️ **The private key is in the login keychain and nowhere else**, under
+  `ai.templetongroup.protect.licence-signing`, and it is a SEPARATE key from
+  Sparkle's. One compromise should not cost both the ability to sell and the
+  ability to ship — and a stolen update key is the worse of the two, because it
+  ships code. `licence-tool.swift generate` refuses to overwrite an existing
+  key: every licence ever issued would stop verifying.
+- ⚠️ **The trial stamp is written twice and the earliest wins.** It lived only
+  in UserDefaults, so `defaults delete ai.templetongroup.protect firstRunDate`
+  bought another fourteen days. A second copy sits beside the licence file and
+  each read restores the other.
+- ⚠️ **None of this stops a recompile, and no client-side scheme can.** Signing
+  raises the floor — invented keys, keygens, one key on a forum. It does not
+  build a ceiling. Anyone weighing more enforcement should read the note in
+  docs/PRODUCT.md first: the only unbreakable model puts the value on a server,
+  and this product's whole claim is that nothing leaves the Mac.
+
 ## Claims on the landing page
 
 `scripts/verify-claims.sh` recomputes every number on the page from the engine

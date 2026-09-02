@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.3</string>
+	<string>0.5.4</string>
 	<key>CFBundleVersion</key>
-	<string>15</string>
+	<string>16</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -28,5 +28,7 @@
 	<string>xp9FZx3OYN5NpmFPmxw3AN7HfLPVcXe5+s+xB27QKwM=</string>
 	<key>SUEnableSystemProfiling</key>
 	<false/>
+	<key>TPLicenceKey</key>
+	<string>uXkvBhvzPgoxjauBs1wSXkdibuE0xqaqXIwwnCFDSiM</string>
 </dict>
 </plist>
