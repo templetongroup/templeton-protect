@@ -88,6 +88,19 @@ term starts on first use.
 already in somebody's hands cannot be recalled, so this is not a migration — it
 is a second shape that has to keep working. See TG-300.
 
+## The one switch to flip
+
+When Paddle verification passes **and** `templetongroup.dev` shows Approved under
+Checkout &rarr; Request domain approval, set `PADDLE_READY = true` in the checkout
+script at the bottom of `showcase/protect/index.html` and publish.
+
+⚠️ **Do not flip it early to test.** With either one outstanding,
+`Paddle.Checkout.open()` still returns normally and paints Paddle's own
+"Something went wrong &mdash; contact support" panel over the page, unbranded. It
+does not throw, so no `try`/`catch` around the call can turn that back into our
+own message. That is why the gate is a flag before the call rather than error
+handling around it.
+
 ## Before the first sale
 
 - [ ] Store account exists (Paddle or Lemon Squeezy — merchant of record, so VAT
