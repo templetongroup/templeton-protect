@@ -722,13 +722,18 @@ recreate with:
   `.icns` ships — `build.sh` and `release.sh` copy that and never look at the png
   — so regenerating the png alone used to change nothing visible and read as a
   silent failure.
-- ⚠️ **Quitting and relaunching is NOT enough**, whatever the older note said. A
-  freshly installed app with a new icon kept showing the old tile through a quit,
-  a relaunch, a `touch` of the bundle, and a `killall Dock`. What finally worked:
+- ⚠️ **Quitting and relaunching is NOT enough**, whatever the older note said,
+  and neither is `killall Dock`, nor `lsregister -f`, nor clearing
+  `~/Library/Caches/com.apple.iconservices.store`. All four were tried in turn on
+  a bundle that was already correct. The caches that actually held the old tile
+  live in the per-boot temp folders:
 
-      rm -rf ~/Library/Caches/com.apple.iconservices.store
-      touch "/Applications/Templeton Protect.app"
-      killall Dock; killall Finder
+      osascript -e 'quit app "Templeton Protect"'
+      find /private/var/folders -name com.apple.dock.iconcache -delete
+      find /private/var/folders -maxdepth 5 -name "com.apple.iconservices" -exec rm -rf {} +
+      killall iconservicesagent; killall Dock
+
+  Give it ten seconds before judging the result.
 
 - ⚠️ **Verify the bundle, not the Dock.** Before chasing the cache, check what
   actually shipped: `shasum` the app's `Contents/Resources/Protect.icns` against
@@ -736,9 +741,11 @@ recreate with:
   and the app was right, and treating the Dock as the source of truth sends you
   rebuilding something that was already correct.
 - The family is told apart by **body colour**, not the mark: Radiant `#5377B3`,
-  AiOS `#857F5E`, Protect `#0B1329`. Protect was champagne-bodied until
-  2026-09-02. The near-black navy is deliberate — an earlier mid-navy body read
-  as Radiant in the Dock. Do not lighten it toward Radiant's blue.
+  AiOS `#857F5E`, Protect `#192A56`. Protect was champagne-bodied until
+  2026-09-02. It went to `#0B1329` first, purely for distance from Radiant, and
+  that read as a black tile rather than a blue one. `#192A56` is the lightest
+  step that still separates by tone at 32px; `#2A4C96` and above start trading
+  places with Radiant, which is the failure this is guarding against.
 
 ## Still open
 

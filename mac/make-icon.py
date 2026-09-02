@@ -6,11 +6,12 @@ shared on purpose, so the body is the only thing separating Protect from
 Radiant (#5377B3) and AiOS (#857F5E) at 32pt in the Dock.
 
 ⚠️ THIS WAS CHAMPAGNE-ON-NAVY UNTIL 2026-09-02, and it was that way because an
-earlier navy body read as Radiant. Tony asked for the inversion; what makes it
-survivable is the *value* gap — Radiant is a mid periwinkle and this is a near
-black navy, so they separate by lightness even where hue does not help. Do not
-lighten it toward Radiant's blue. If the two ever start colliding in the Dock
-again, the fix is a darker body, not a different mark.
+earlier navy body read as Radiant. Tony asked for the inversion. What makes it
+survivable is that Radiant is a mid periwinkle with a WHITE mark and this is a
+darker navy with a GOLD one — they separate on both counts. Do not lighten it
+toward Radiant's blue: #2A4C96 and above start trading places with it at 32px,
+which is the size that actually matters. If they ever collide again, the fix is
+a darker body, not a different mark.
 
 ⚠️ THE SWIRL IS LIFTED, NEVER RE-RENDERED. Radiant's icon was once rebuilt by
 re-drawing the mark through a blur/threshold pass whose radius scaled with the
@@ -31,9 +32,12 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 CANVAS = 1024
 CHAMPAGNE = (247, 215, 148)         # #F7D794  the swirl
-# The body. #0B1329 is the app's own darkest surface, and the point of choosing
-# it over #192A56 is distance from Radiant's #5377B3 at Dock size.
-NAVY = (11, 19, 41)                 # #0B1329  the body
+# The body: the app's own brand navy. It started at #0B1329, the darkest surface
+# in the palette, purely for distance from Radiant — and it read as a black tile
+# rather than a blue one. This is the lightest step that still separates from
+# Radiant's #5377B3 by tone at 32px; the gold mark against Radiant's white one
+# carries the rest. Lighter than this and they start to trade places in the Dock.
+NAVY = (25, 42, 86)                 # #192A56  the body
 BODY = int(round(0.896 * CANVAS))
 MARK = 694
 
@@ -69,7 +73,26 @@ def squircle(size: int) -> Image.Image:
 
 
 def main() -> None:
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.home() / "Projects/aios-claude/mac/icon-1024.png"
+    """`make-icon.py [source.png] [--body RRGGBB] [--out path.png]`
+
+    ⚠️ --body EXISTS SO CANDIDATES CAN BE COMPARED SIDE BY SIDE BEFORE ONE
+    SHIPS, not so the colour is a matter of taste. Every step lighter walks
+    toward Radiant's #5377B3, and the whole family is told apart by body colour.
+    Look at a candidate at 32px next to Radiant before believing it.
+    """
+    args = sys.argv[1:]
+    body_hex, out = None, None
+    rest = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--body": body_hex = args[i + 1]; i += 2
+        elif args[i] == "--out": out = Path(args[i + 1]); i += 2
+        else: rest.append(args[i]); i += 1
+    global NAVY
+    if body_hex:
+        h = body_hex.lstrip("#")
+        NAVY = tuple(int(h[j:j + 2], 16) for j in (0, 2, 4))
+    src = Path(rest[0]) if rest else Path.home() / "Projects/aios-claude/mac/icon-1024.png"
     mark = lift_swirl(Image.open(src))
     print(f"  lifted swirl {mark.size[0]}x{mark.size[1]} from {src.name}")
 
@@ -82,9 +105,11 @@ def main() -> None:
 
     icon = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     icon.paste(body, ((CANVAS - BODY) // 2,) * 2, body)
-    icon.save(HERE / "icon-1024.png")
-    print(f"  wrote icon-1024.png  body {BODY}  swirl {MARK}")
-    write_icns(icon)
+    target = out or (HERE / "icon-1024.png")
+    icon.save(target)
+    print(f"  wrote {target.name}  body #{NAVY[0]:02X}{NAVY[1]:02X}{NAVY[2]:02X}  swirl {MARK}")
+    if out is None:
+        write_icns(icon)
 
 
 def write_icns(icon: Image.Image) -> None:
