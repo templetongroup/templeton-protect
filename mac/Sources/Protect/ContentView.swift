@@ -952,9 +952,19 @@ struct ContentView: View {
             ForEach(ScanKind.allCases, id: \.self) { kind in
                 Button { model.scan(kind) } label: {
                     HStack(spacing: Space.sm) {
-                        Image(systemName: model.has(kind) ? "checkmark.circle.fill" : kind.icon)
-                            .font(.system(size: FontSize.caption))
-                            .foregroundStyle(model.has(kind) ? Ink.good : Ink.accent)
+                        // The tick draws itself the moment that scan comes back,
+                        // so a run that finished while you were reading the list
+                        // announces itself instead of just being true.
+                        Group {
+                            if model.has(kind) {
+                                DrawnCheck(size: FontSize.caption, color: Ink.good)
+                            } else {
+                                Image(systemName: kind.icon)
+                                    .font(.system(size: FontSize.caption))
+                                    .foregroundStyle(Ink.accent)
+                            }
+                        }
+                        .frame(width: FontSize.caption, height: FontSize.caption)
                         Text(model.has(kind) ? kind.title : "\(kind.title) — not run yet")
                             .font(.system(size: FontSize.caption, weight: .medium))
                             .foregroundStyle(model.has(kind) ? Ink.secondary(Dim.strong) : Ink.primary)
@@ -1070,7 +1080,9 @@ struct ContentView: View {
             .padding(Space.xxl).frame(maxWidth: .infinity).contentSurface(radius: Radius.panel)
         } else {
             VStack(spacing: Space.md) {
-                ForEach(r.findings, id: \.identity) { FindingCard(finding: $0, model: model) }
+                ForEach(Array(r.findings.enumerated()), id: \.element.identity) { i, finding in
+                    FindingCard(finding: finding, model: model).arrives(at: i)
+                }
             }
         }
     }

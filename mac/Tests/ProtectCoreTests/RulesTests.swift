@@ -242,17 +242,29 @@ final class InstallationsFixtureTests: XCTestCase {
         try? FileManager.default.removeItem(at: home)
     }
 
-    func testAKeyInATranscriptIsFoundAndTheFixIsNotDestructive() throws {
+    func testAKeyInATranscriptIsRedactedRatherThanDeleted() throws {
         let f = home.appendingPathComponent(".claude/session.jsonl")
         try #"{"text":"key sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"}"#
             .write(to: f, atomically: true, encoding: .utf8)
         let r = scanAiInstallations(home: home.path)
         let finding = r.findings.first { $0.rule == "secrets-in-transcripts" }
         XCTAssertNotNil(finding)
-        // ⚠️ The fix is redaction. "Delete this transcript" shipped once and
-        // it was the destructive option Tony vetoed.
+        /*
+         ⚠️ The fix is redaction. "Delete this transcript" shipped once and it
+         was the option Tony vetoed — so what this test guards is that the
+         transcript survives, which is the `kind`.
+
+         It used to assert `destructive == false` as well, and that was pinning
+         the wrong thing: `destructive` does not mean "harms the transcript", it
+         means "ask before doing it". Redaction rewrites a personal conversation
+         file in place with no copy and nothing in the Trash, so it has to ask —
+         and the assertion was holding the confirmation step off the one fix in
+         the app that cannot be taken back.
+         */
         XCTAssertEqual(finding?.fix?.kind, .redactInFile)
-        XCTAssertEqual(finding?.fix?.destructive, false)
+        XCTAssertNotEqual(finding?.fix?.kind, .deleteFile)
+        XCTAssertEqual(finding?.fix?.destructive, true)
+        XCTAssertEqual(finding?.fix?.confirmLabel, "Yes, remove the key")
     }
 
     func testReachabilityChecksTheWholeChain() throws {

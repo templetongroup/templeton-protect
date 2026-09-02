@@ -173,7 +173,11 @@ struct FindingCard: View {
     @ViewBuilder private var footer: some View {
         if let outcome {
             HStack(spacing: Space.sm) {
-                Image(systemName: outcome.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                if outcome.ok {
+                    DrawnCheck(size: FontSize.small, color: Ink.good)
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                }
                 Text(outcome.message).fixedSize(horizontal: false, vertical: true)
             }
             .font(.system(size: FontSize.caption, weight: .medium))
@@ -188,7 +192,9 @@ struct FindingCard: View {
                         .font(.system(size: FontSize.caption)).foregroundStyle(Ink.secondary(Dim.strong))
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: Space.sm) {
-                        glassButton("Yes, delete it", tint: tint) { model.apply(finding) }
+                        HoldToConfirm(label: fix.confirmLabel,
+                                      holdingLabel: "Keep holding\u{2026}",
+                                      tint: tint) { model.apply(finding) }
                         glassButton("Keep it") { model.armed.remove(finding.identity) }
                     }
                 } else {

@@ -110,10 +110,14 @@ test("redacting a transcript with no keys changes nothing", () => {
   assert.equal(text, clean, "a file with nothing to fix must come back byte for byte");
 });
 
-test("the offered fix is redaction, and it is not destructive", () => {
+test("the offered fix redacts the key and leaves the transcript, and it asks first", () => {
   const f = transcriptFinding("~/a.jsonl", findKeys("sk-proj-Ab3dEfGh1jKlMn0pQrStUvWxYz012345"), false);
   assert.equal(f.fix.kind, "redact-in-file");
-  assert.equal(f.fix.destructive, false);
+  // `destructive` is not "harms the transcript" — it is "ask before doing it".
+  // Rewriting somebody's conversation in place has no copy and nothing in the
+  // Trash behind it, so it asks. Pinned false, this test was holding the
+  // confirmation step off the one fix in the app that cannot be undone.
+  assert.equal(f.fix.destructive, true);
 });
 
 // Rotation is the fix; redaction is the clean-up. The advice has to name the

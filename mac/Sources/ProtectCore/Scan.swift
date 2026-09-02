@@ -265,7 +265,17 @@ public func scanAiInstallations(home: String = NSHomeDirectory(),
                      */
                     fix: FixAction(label: "Remove the key from this transcript",
                                    describes: "Replaces \(vendors.count == 1 ? "the key-shaped value" : "all \(vendors.count) key-shaped values") with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys, and that is the step that matters — they have been sitting in plain text, so treat them as compromised whatever you do here.",
-                                   kind: .redactInFile, target: display, mode: nil, destructive: false),
+                                   /*
+                                    ⚠️ DESTRUCTIVE, EVEN THOUGH IT IS THE GENTLE
+                                    OPTION. It replaces the key and leaves the
+                                    rest byte for byte, which is why it exists —
+                                    but it rewrites a personal conversation file
+                                    in place, with no copy and nothing in the
+                                    Trash to put back. Flagged false, it skipped
+                                    the confirmation step entirely and one click
+                                    edited the file for good.
+                                    */
+                                   kind: .redactInFile, target: display, mode: nil, destructive: true),
                     guidance: rotationSteps(unique, found: "a conversation log")))
                 continue
             }

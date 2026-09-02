@@ -31,6 +31,20 @@ public struct FixAction: Codable {
     public let target: String
     public let mode: UInt16?
     public let destructive: Bool
+
+    /// What the confirming button says.
+    ///
+    /// ⚠️ IT USED TO BE "Yes, delete it" FOR EVERY DESTRUCTIVE FIX, which was
+    /// true while deleting a file was the only one. Redaction is destructive too
+    /// and deletes nothing, so the button was describing the wrong action at the
+    /// exact moment somebody was deciding whether to take it.
+    public var confirmLabel: String {
+        switch kind {
+        case .deleteFile: return "Yes, delete it"
+        case .redactInFile: return "Yes, remove the key"
+        default: return "Yes, do it"
+        }
+    }
     public init(label: String, describes: String, kind: Kind, target: String,
                 mode: UInt16?, destructive: Bool) {
         self.label = label; self.describes = describes; self.kind = kind

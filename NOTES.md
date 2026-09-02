@@ -671,6 +671,33 @@ recreate with:
 - `forget()` deliberately leaves the first-run stamp. Giving up a licence must
   not hand back a fresh trial.
 
+## Fixes, confirmation, and what `destructive` means
+
+- ⚠️ **`destructive` means "ask before doing it", not "harms the file".** The
+  redaction fix — the gentle one, that takes the key out and leaves the
+  conversation byte for byte — was flagged `destructive: false` in both rule
+  sets, and both test suites pinned it there. The flag is what routes a fix
+  through the confirmation step, so one click permanently rewrote somebody's
+  transcript with no copy and nothing in the Trash. It is `true` now, in Swift
+  and TypeScript, and the tests pin the transcript surviving (the `kind`) rather
+  than the flag.
+- Nothing else in either rule set sets it true, so before this the whole arm and
+  confirm path in `FindingCard` was unreachable code.
+- Fixes delete and rewrite outright rather than moving to the Trash, and that is
+  deliberate: a file full of leaked keys sitting recoverable in the Trash is not
+  a fix. It also means **there is nothing to undo**, so do not add an undo
+  affordance — the safety has to live in the press. That is what `HoldToConfirm`
+  in `Sources/Protect/Motion.swift` is for, and it falls back to a plain button
+  under reduce-motion or VoiceOver.
+- ⚠️ **`HOME=… ` does not sandbox a scan.** Running the built app with a fake
+  home to try a fix safely does not work — the scan still read the real home and
+  reported 7,406 files. To exercise a fix without touching real data, write a
+  throwaway transcript inside the real home and remove it afterwards.
+- ⚠️ **The results list cannot be driven by System Events.** `entire contents of
+  window 1` returns nothing for these SwiftUI views and Page Down does not scroll
+  the list, so a card below the fold cannot be reached from a script. Verifying
+  anything down there means doing it by hand.
+
 ## Still open
 
 - Tony to rotate the keys the scan found (TG-281).

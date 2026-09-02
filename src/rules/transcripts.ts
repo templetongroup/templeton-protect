@@ -140,10 +140,15 @@ export function transcriptFinding(display: string, hits: KeyHit[], reachable: bo
       describes: `Replaces ${hits.length === 1 ? "the key-shaped value" : `all ${hits.length} key-shaped values`} in ${display} with a marker and leaves the rest of the conversation exactly as it was. It does NOT rotate the keys, and that is the step that actually matters: they have been sitting in plain text, so treat them as compromised whatever you do here. ${rotateAdvice(vendors)}`,
       kind: "redact-in-file",
       target: display,
-      // Editing one value out of a file is not destroying somebody's history.
       // Deleting the whole transcript to remove a key is a cure worse than the
-      // disease, and on a client's machine it is not ours to do.
-      destructive: false,
+      // disease, and on a client's machine it is not ours to do — which is why
+      // the kind is a redaction and not a delete.
+      //
+      // The flag is a different question: it means "ask before doing it". This
+      // rewrites a personal conversation file in place, with no copy and nothing
+      // in the Trash to put back, so it asks. Set to false it skipped the
+      // confirmation step entirely and one click edited the file for good.
+      destructive: true,
     },
     // Proved by matching a vendor-specific key shape, with placeholders excluded.
     verified: true,
