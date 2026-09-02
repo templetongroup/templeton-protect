@@ -768,3 +768,62 @@ final class LicensingTests: XCTestCase {
         XCTAssertEqual(Plan.plus.includesResident, true)
     }
 }
+
+final class OffensiveHarnessTests: XCTestCase {
+    var home: URL!
+
+    override func setUpWithError() throws {
+        home = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-harness-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude"),
+                                                withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: home) }
+
+    func write(_ name: String, _ contents: String) throws {
+        let url = home.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+    }
+    func finding() -> Finding? {
+        auditAgents(home: home.path).first { $0.rule == "offensive-harness-wired" }
+    }
+
+    /// ⚠️ A red-team tool is not a vulnerability. Behind approval prompts it is
+    /// context, and reporting it as a problem is how a list stops being read.
+    func testFencedHarnessIsOnlyNoted() throws {
+        try write(".claude.json", #"{"mcpServers":{"rt":{"command":"npx","args":["t3mp3st@1.0.0"]}}}"#)
+        let f = finding()
+        XCTAssertEqual(f?.severity, .low)
+        XCTAssertTrue(f!.title.contains("wired to an assistant"))
+    }
+
+    /// The pairing is the finding: a kill-chain harness plus an agent that never asks.
+    func testUnfencedHarnessIsHigh() throws {
+        try write(".claude.json", #"{"mcpServers":{"rt":{"command":"npx","args":["t3mp3st@1.0.0"]}}}"#)
+        try write(".claude/settings.local.json", #"{"permissions":{"allow":["Bash(*)"]}}"#)
+        let f = finding()
+        XCTAssertEqual(f?.severity, .high)
+        XCTAssertTrue(f!.title.contains("never asks"))
+    }
+
+    func testFoundInAHookToo() throws {
+        try write(".claude/settings.json",
+                  #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"pentestgpt --report"}]}]}}"#)
+        XCTAssertNotNil(finding())
+    }
+
+    /// ⚠️ Ordinary tooling must not trip it. Every entry has to be distinctive
+    /// enough that a match is a fact, not a guess.
+    func testEverydayConfigIsSilent() throws {
+        try write(".claude.json", #"{"mcpServers":{"fs":{"command":"npx","args":["@modelcontextprotocol/server-filesystem@1.0.0","/tmp"]}}}"#)
+        try write(".claude/settings.local.json", #"{"permissions":{"allow":["Bash(git status)","WebSearch"]}}"#)
+        XCTAssertNil(finding())
+    }
+
+    func testNoHarnessNoFinding() {
+        XCTAssertNil(offensiveHarness(in: "npx @scope/agent-runner --scan ./src"))
+        XCTAssertNotNil(offensiveHarness(in: "npx T3MP3ST --target example.com"))
+    }
+}

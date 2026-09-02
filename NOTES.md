@@ -97,6 +97,23 @@ plus `Watcher.swift` and `History.swift` in core so they can be tested, and
   makes the boundary visible; flipping the default to `.free` is the launch
   decision, with the payment rails, and it is Tony's not an agent's.
 
+## Claims on the landing page
+
+`scripts/verify-claims.sh` recomputes every number on the page from the engine
+and fails if one has drifted. `release.sh` runs it before it builds.
+
+- ⚠️ **It exists because one was wrong.** The page shipped a draft claiming 16
+  credential vendors when the figure is 12 — the regex tuples had been counted,
+  and `keyShapesForRedaction` repeats several. A false number on a security
+  scanner's own marketing page is precisely what the product exists to catch.
+  The discipline is borrowed from T3MP3ST's `verify-claims`.
+- ⚠️ **Match stats by a KEYWORD in the label, never the whole label.** The page
+  is designed by another hand and the wording moves — "rules" became
+  "fact-anchored rules" between one run and the next. Exact matching reports
+  MISSING on every rewrite, which teaches people to ignore the script.
+- The egress claim is checked as an *absence*: no HTTP client anywhere in
+  `ProtectCore`. Sparkle lives in the app target, and the page says so.
+
 ## The agent-permissions audit
 
 `mac/Sources/ProtectCore/Agents.swift`, run as a stage of the installations scan.

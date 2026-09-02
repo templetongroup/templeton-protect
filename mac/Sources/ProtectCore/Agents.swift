@@ -82,6 +82,31 @@ func mcpConfigSources(home: String) -> [(path: String, owner: String)] {
 
 // ── the audit ──────────────────────────────────────────────────────────
 
+
+/**
+ Offensive-security agent harnesses, by the name they are launched under.
+
+ ⚠️ THIS IS NOT A LIST OF BAD SOFTWARE. These are legitimate tools — a
+ penetration tester running one on their own machine is doing their job, and
+ reporting that as a vulnerability would be exactly the kind of false alarm that
+ teaches somebody to stop reading the list. What makes it worth saying is the
+ *combination*: a framework whose whole design is "point the assistant you are
+ already signed into at a target and let the kill chain run" sitting on a machine
+ where that same assistant has a standing grant to run anything. The tool did not
+ create the exposure; it is a very capable thing to hand it.
+
+ ⚠️ EVERY ENTRY MUST BE DISTINCTIVE ENOUGH THAT A MATCH IS A FACT. A generic word
+ here — "agent", "exploit", "scan" — would fire on half the npm registry. Short,
+ specific, and easy to extend is the correct shape; long and fuzzy is not.
+ */
+let offensiveHarnesses = ["t3mp3st", "pentestgpt", "hackingbuddygpt", "cai-fx", "nebula-ai"]
+
+/// Which of them a command line mentions.
+func offensiveHarness(in text: String) -> String? {
+    let lowered = text.lowercased()
+    return offensiveHarnesses.first { lowered.contains($0) }
+}
+
 public func auditAgents(home: String = NSHomeDirectory()) -> [Finding] {
     var findings: [Finding] = []
     let fm = FileManager.default
@@ -311,15 +336,83 @@ public func auditAgents(home: String = NSHomeDirectory()) -> [Finding] {
             verified: true, fix: nil, guidance: nil))
     }
 
+    // ── an offensive harness wired to an assistant ─────────────────────
+    //
+    // Read out of the same configuration already parsed above: an MCP server,
+    // a hook, or an allowlist entry that launches one of these by name.
+    var harnessSightings: [(String, String)] = []   // (tool, where)
+    for srv in servers {
+        let line = ([srv.command ?? ""] + srv.args).joined(separator: " ")
+        if let tool = offensiveHarness(in: line) {
+            harnessSightings.append((tool, "\(srv.configPath) → \(srv.name)"))
+        }
+    }
+    for name in [".claude/settings.json", ".claude/settings.local.json"] {
+        let path = (home as NSString).appendingPathComponent(name)
+        guard let root = json(at: path) else { continue }
+        if let perms = root["permissions"] as? [String: Any],
+           let allow = perms["allow"] as? [String] {
+            for grant in allow {
+                if let tool = offensiveHarness(in: grant) {
+                    harnessSightings.append((tool, display(path)))
+                }
+            }
+        }
+        if let hooks = root["hooks"] as? [String: Any] {
+            for (_, entries) in hooks {
+                guard let list = entries as? [[String: Any]] else { continue }
+                for entry in list {
+                    for hook in (entry["hooks"] as? [[String: Any]]) ?? [] {
+                        guard let command = hook["command"] as? String,
+                              let tool = offensiveHarness(in: command) else { continue }
+                        harnessSightings.append((tool, display(path)))
+                    }
+                }
+            }
+        }
+    }
+
+    // ⚠️ SEVERITY FOLLOWS THE FENCE, NOT THE TOOL. Wired to an agent that still
+    // asks before it acts, this is context worth knowing and nothing more. Wired
+    // to one that never asks, it is the difference between an assistant that
+    // could read your files and one that arrives with an exploit chain attached.
+    let unfencedGrant = !broadGrants.isEmpty
+        || findings.contains { $0.rule == "agent-approval-never" }
+    if !harnessSightings.isEmpty {
+        let tools = Set(harnessSightings.map(\.0)).sorted()
+        findings.append(Finding(
+            rule: "offensive-harness-wired", layer: "harness",
+            severity: unfencedGrant ? .high : .low,
+            title: unfencedGrant
+                ? "An offensive-security harness is wired to an agent that never asks"
+                : "An offensive-security harness is wired to an assistant",
+            where_: Set(harnessSightings.map(\.1)).sorted().joined(separator: ", "),
+            evidence: "configuration launches: " + tools.joined(separator: ", "),
+            remedy: unfencedGrant
+                ? "Narrow the standing grant first — the findings above name it. Keep this harness on a machine, or an account, that is not also signed into your everyday credentials."
+                : "Nothing to fix if this is your own tooling. Keep the approval prompts on while it is configured.",
+            validation: "Re-run after narrowing the grants; the severity follows them down.",
+            plain: unfencedGrant
+                ? "This is a legitimate red-teaming tool, and on its own it is not a problem — somebody testing systems they are authorised to test needs one. What makes it worth saying here is the pairing: it is built to take the assistant you are already signed into and drive it through recon, exploitation and reporting, and on this Mac that assistant has standing permission to run commands without asking. The tool did not create that exposure, but it is a very capable thing to have handed it."
+                : "A red-teaming harness is configured against your assistant. That is ordinary if it is your own tooling — it is noted because it is built to drive your assistant through an attack chain, so it belongs on the list of things that agent can reach for. Your approval prompts are still on, which is what keeps it deliberate.",
+            verified: true, fix: nil,
+            guidance: unfencedGrant
+                ? NextSteps(title: "Put a fence between the two",
+                    steps: [
+                        "Narrow the standing shell grant — that is the finding that actually changes the blast radius, and it is listed above.",
+                        "Run offensive tooling from an account or a machine that is not signed into your production credentials, cloud keys or password manager.",
+                        "Keep approval prompts on for the assistant the harness drives. A tool designed to chain steps together is the last one to hand a blanket yes.",
+                    ])
+                : nil))
+    }
+
     // ── blast radius ───────────────────────────────────────────────────
     //
     // ⚠️ ONLY WHEN AN UNFENCED GRANT EXISTS. Every agent can read what your
     // account can read; that is not a finding, it is how computers work. The
     // finding is the combination: an agent that never asks, on an account whose
     // sensitive stores are sitting where a shell can reach them.
-    let unfenced = !broadGrants.isEmpty
-        || findings.contains { $0.rule == "agent-approval-never" }
-    if unfenced {
+    if unfencedGrant {
         let stores: [(String, String)] = [
             (".ssh", "SSH keys — every server they open"),
             (".aws", "AWS credentials"),

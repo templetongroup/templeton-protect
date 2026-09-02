@@ -23,6 +23,16 @@ DMG="dist/Templeton Protect.dmg"
 NOTARISE=1
 [ "${1:-}" = "--no-notary" ] && NOTARISE=0
 
+# ⚠️ THE CLAIMS ARE CHECKED BEFORE THE BUILD, NOT AFTER. A release is the moment
+# the landing page and the engine are supposed to agree; catching the drift after
+# notarising means either shipping a wrong number or throwing away ten minutes.
+# Non-blocking on purpose — a missing site checkout must not stop a release.
+if [ -x ../scripts/verify-claims.sh ]; then
+  echo "▸ verifying the page's claims"
+  ../scripts/verify-claims.sh 2>&1 | sed 's/^/  /' || \
+    echo "  !! a landing-page claim does not reproduce — see above" >&2
+fi
+
 echo "▸ building universal"
 # ⚠️ BOTH ARCHITECTURES. swift build defaults to this machine's, so the app was
 # arm64-only — it would not launch at all on an Intel Mac, and that is a silent
