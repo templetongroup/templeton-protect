@@ -1,5 +1,29 @@
 # Selling Protect+
 
+## The store is Paddle, and it is set up
+
+Live catalog, created 2026-09-02:
+
+| What | ID |
+|---|---|
+| Product — Templeton Protect+ | `pro_01m1hsp5k7e7bp5mc9gh6wpk5r` |
+| $5/month | `pri_01m1hsq8qhs61npwszh9awp4fm` |
+| $50/year | `pri_01m1hsr0m7p4pp5j5gzc2da5r8` |
+
+Checkout is Paddle.js on the landing page, using the public client-side token
+`live_6ef5b17f00bb6204ce343347aa7`. `templetongroup.dev` is submitted for domain
+approval and pending.
+
+⚠️ **PADDLE DOES NOT HAND OUT LICENCE KEYS.** Lemon Squeezy sells from a list of
+keys you upload; Paddle Billing has no equivalent. So `batch` is not the
+fulfilment path here — with Paddle a key is delivered either by a webhook we
+write, or by hand. At the volumes this starts at, by hand is correct: the store
+emails you the order, `issue` takes two seconds.
+
+⚠️ **NOTHING CAN BE SOLD UNTIL BUSINESS VERIFICATION PASSES**, which needs
+personal identity details and bank details and is Tony's to complete. Checkout
+will not open before then, on any domain.
+
 ## There is no server, and there does not need to be one yet
 
 A Protect+ licence is a signed expiry date. The app checks the signature against
