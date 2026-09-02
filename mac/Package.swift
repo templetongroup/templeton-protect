@@ -1,5 +1,29 @@
 // swift-tools-version:5.9
+import Foundation
 import PackageDescription
+
+/*
+ ⚠️ THE PAID LAYER IS NOT IN THIS REPOSITORY. Protect+ — the resident menu bar,
+ the schedule, the live transcript watcher and the licence verification — lives
+ in templetongroup/templeton-protect-plus, which is private. Its sources are
+ checked out into the `Plus` folders below, which are gitignored here.
+
+ A public clone has no `Plus` folders, so PROTECT_PLUS is undefined and the app
+ builds as the free scanner: every rule, every fix, every export, and no paywall
+ code to delete. That is the point of the split — LICENSE already called the
+ resident layer commercial, and until now its source sat in a public repository
+ with a removable `if`, which made the split a claim rather than a fact.
+
+ scripts/link-plus.sh wires a local checkout in.
+*/
+func hasPlus() -> Bool {
+    let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let dir = here.appendingPathComponent("Sources/ProtectCore/Plus")
+    let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+    return files.contains { $0.hasSuffix(".swift") }
+}
+let plus = hasPlus()
+let plusFlags: [SwiftSetting] = plus ? [.define("PROTECT_PLUS")] : []
 
 // The Swift test target exists now (TG-291). The TypeScript suite pins the
 // installations rules it was written against; everything added since 2026-08-31
@@ -17,7 +41,7 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
-        .target(name: "ProtectCore", path: "Sources/ProtectCore"),
+        .target(name: "ProtectCore", path: "Sources/ProtectCore", swiftSettings: plusFlags),
         .executableTarget(name: "Protect", dependencies: ["ProtectCore", .product(name: "Sparkle", package: "Sparkle")], path: "Sources/Protect",
                           /*
                            ⚠️ SwiftPM PICKS UP .metal FILES BY ITSELF AND TRIES TO
@@ -40,6 +64,7 @@ let package = Package(
                           // lives in Contents/Frameworks; without this the
                           // binary builds and then dies at launch with "image
                           // not found".
+                          swiftSettings: plusFlags,
                           linkerSettings: [.unsafeFlags([
                               "-Xlinker", "-rpath",
                               "-Xlinker", "@executable_path/../Frameworks",
@@ -47,6 +72,6 @@ let package = Package(
         .executableTarget(name: "Probe", dependencies: ["ProtectCore"], path: "Sources/Probe"),
         // The command-line face of the same engine — scan in CI, gate a commit.
         .executableTarget(name: "protect-cli", dependencies: ["ProtectCore"], path: "Sources/CLI"),
-        .testTarget(name: "ProtectCoreTests", dependencies: ["ProtectCore"], path: "Tests/ProtectCoreTests"),
+        .testTarget(name: "ProtectCoreTests", dependencies: ["ProtectCore"], path: "Tests/ProtectCoreTests", swiftSettings: plusFlags),
     ]
 )

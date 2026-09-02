@@ -33,6 +33,7 @@ The tagline is "Scan your Mac, your assistants, and your code" and as of
 | What | Where |
 |---|---|
 | Scan rules (Swift — what the app runs) | `mac/Sources/ProtectCore/` |
+| The paid resident layer (private repo) | `scripts/link-plus.sh`, then `Sources/*/Plus/` |
 | Hardware and posture scan | `mac/Sources/ProtectCore/Machine.swift` |
 | Codebase scan | `mac/Sources/ProtectCore/Code.swift` |
 | Remediation steps and key-rotation pages | `mac/Sources/ProtectCore/NextSteps.swift` |
@@ -58,6 +59,9 @@ nothing else. See `HANDOFF.md`; closing this is the largest open item.
   destroyed the installed app when the source was mid-rebuild.
 - **A running app keeps its old Dock icon.** Quit and relaunch before deciding an
   icon change did not land.
+- **The paid layer is not in this repo.** `scripts/link-plus.sh` links the private
+  one in; `--off` unlinks it. Run both before shipping — the free build breaking
+  is silent otherwise, and read the manifest-cache warning in `NOTES.md` first.
 - US English, not British. The test suite enforces it.
 - Keep secrets and client content out of the notes and the commit messages.
 

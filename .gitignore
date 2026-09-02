@@ -3,3 +3,6 @@ mac/dist/
 mac/Protect.icns
 node_modules/
 .DS_Store
+
+# The private Protect+ layer, linked in by scripts/link-plus.sh
+mac/Sources/*/Plus/

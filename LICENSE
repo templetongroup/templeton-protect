@@ -5,11 +5,16 @@ The scanning ENGINE and command-line tool are MIT-licensed, under the terms
 below. This is everything that finds and explains a finding: mac/Sources/
 ProtectCore, mac/Sources/CLI, the exports, and the test suites.
 
-The RESIDENT APPLICATION LAYER — the menu bar presence, scheduled scanning and
-the transcript watcher, in mac/Sources/Protect/Resident.swift, Watcher.swift and
-Plan.swift — is part of Protect+, a commercial product. It is published here to
-be read and audited; running it as a service is offered by subscription. See
-docs/PRODUCT.md.
+The RESIDENT APPLICATION LAYER — the menu bar presence, scheduled scanning, the
+transcript watcher and licence checking — is part of Protect+, a commercial
+product. Its source is NOT in this repository; it is kept privately and ships
+only inside the signed application. See docs/PRODUCT.md.
+
+It used to be published here. That was honest about what it did and dishonest
+about what it cost: anyone could delete the licence check and rebuild, so the
+subscription rested on nobody bothering. Removing it is not a claim that the
+binary cannot be tampered with — it is the difference between tampering and
+recompiling.
 
 Nothing in the MIT engine depends on the resident layer, and the free scanner is
 complete on its own. This split is stated here, in the first paragraph, on

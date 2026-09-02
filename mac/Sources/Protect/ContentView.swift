@@ -42,14 +42,17 @@ enum Phase { case idle, scanning, done }
     /// scan, .isQuiet when nothing moved.
     @Published var lastDelta: ScanDelta?
     let history = HistoryStore()
+    #if PROTECT_PLUS
     /// Reaches the Resident controller owned by the app delegate; a closure so
     /// the Model does not own the lifecycle.
     var resident: (() -> Resident?)?
+    #endif
     /// Mirrors Resident.enabled so SwiftUI sees the change; the Resident owns
     /// the machinery, this owns the pixels.
     /// macOS refused to let this app post notifications. Keep watch still runs
     /// and the menu bar line still reports; the live alert cannot arrive.
     @Published var notificationsBlocked = false
+    #if PROTECT_PLUS
     /// Trial, subscribed, lapsed. Re-read whenever the window appears, so a
     /// licence entered elsewhere shows up without a relaunch.
     @Published var entitlement: Entitlement = Licensing.entitlement()
@@ -89,6 +92,7 @@ enum Phase { case idle, scanning, done }
     @Published var keepWatch = UserDefaults.standard.bool(forKey: "keepWatch") {
         didSet { resident?()?.enabled = keepWatch }
     }
+    #endif
     private var timer: Timer?
 
     /**
@@ -419,9 +423,13 @@ struct ContentView: View {
             .padding(.top, Chrome.titleBar)
         }
         .frame(minWidth: 860, minHeight: 580)
+        #if PROTECT_PLUS
         .sheet(isPresented: $model.showingLicenceSheet) { LicenceSheet(model: model) }
+        #endif
         .onAppear {
+            #if PROTECT_PLUS
             model.refreshEntitlement()
+            #endif
             model.detect()
             // Lets a screenshot reach the results screen without a click. The
             // app's own layout is the thing being checked, so it has to be the
@@ -538,11 +546,14 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: Space.xxl) {
             pitch
             cards
+            #if PROTECT_PLUS
             keepWatchRow
+            #endif
         }
         .padding(.vertical, Space.xl)
     }
 
+    #if PROTECT_PLUS
     /// The Protect+ row: the resident layer, and the line where the paid
     /// product starts. The engine above it is open source; this is the part
     /// that runs on your behalf.
@@ -645,6 +656,7 @@ struct ContentView: View {
         .padding(Space.lg)
         .contentSurface(radius: Radius.card)
     }
+    #endif
 
     private var pitch: some View {
         VStack(alignment: .leading, spacing: Space.md) {

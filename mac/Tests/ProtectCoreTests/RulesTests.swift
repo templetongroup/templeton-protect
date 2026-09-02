@@ -480,6 +480,7 @@ final class HistoryScanTests: XCTestCase {
     }
 }
 
+#if PROTECT_PLUS
 final class HistoryTests: XCTestCase {
     var store: HistoryStore!
     var dir: URL!
@@ -536,7 +537,9 @@ final class HistoryTests: XCTestCase {
         }
     }
 }
+#endif
 
+#if PROTECT_PLUS
 final class WatcherTests: XCTestCase {
     /// A UserDefaults nobody else shares, so a test cannot inherit or leave
     /// state in the real preferences.
@@ -683,7 +686,9 @@ final class WatcherTests: XCTestCase {
         XCTAssertEqual(tag.count, 16)
     }
 }
+#endif
 
+#if PROTECT_PLUS
 final class AgentNamingTests: XCTestCase {
     /// ⚠️ "1a183aae-…-c49ed7c7c117.jsonl" is not a place a person can act on.
     func testTheAssistantIsNamedRatherThanTheUUID() {
@@ -697,7 +702,9 @@ final class AgentNamingTests: XCTestCase {
         XCTAssertNil(TranscriptWatcher.agent(forPath: "/Users/x/Documents/notes.md", home: home))
     }
 }
+#endif
 
+#if PROTECT_PLUS
 final class LicensingTests: XCTestCase {
     func freshDefaults() -> UserDefaults {
         let suite = "protect.lic.\(UUID().uuidString)"
@@ -706,8 +713,22 @@ final class LicensingTests: XCTestCase {
         return d
     }
 
-    override func setUpWithError() throws { try? Licensing.forget() }
-    override func tearDownWithError() throws { try? Licensing.forget() }
+    /// ⚠️ Every licensing test runs against a throwaway directory. Without this
+    /// the suite reads and rewrites the *installed* app's licence and trial
+    /// stamp, and the trial test starts failing the day after an install.
+    override func setUpWithError() throws {
+        Licensing.storageOverride = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("protect-tests-\(UUID().uuidString)")
+        try? Licensing.forget()
+    }
+
+    override func tearDownWithError() throws {
+        try? Licensing.forget()
+        if let root = Licensing.storageOverride {
+            try? FileManager.default.removeItem(at: root)
+        }
+        Licensing.storageOverride = nil
+    }
 
     func testAFreshInstallIsInTrial() {
         let d = freshDefaults()
@@ -754,9 +775,7 @@ final class LicensingTests: XCTestCase {
     /// ⚠️ The licence file names a customer. It is not for other accounts.
     func testTheLicenceFileIsPrivate() throws {
         try Licensing.save(License(key: "K", email: "a@b.c", checked: Date(), expires: nil))
-        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Templeton Protect/license.json")
-        let mode = (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.uint16Value
+        let mode = (try FileManager.default.attributesOfItem(atPath: Licensing.licenceLocation.path)[.posixPermissions] as? NSNumber)?.uint16Value
         XCTAssertEqual(mode, 0o600)
     }
 
@@ -769,6 +788,7 @@ final class LicensingTests: XCTestCase {
         XCTAssertEqual(Plan.plus.includesResident, true)
     }
 }
+#endif
 
 final class OffensiveHarnessTests: XCTestCase {
     var home: URL!
@@ -829,6 +849,7 @@ final class OffensiveHarnessTests: XCTestCase {
     }
 }
 
+#if PROTECT_PLUS
 final class LicenceSigningTests: XCTestCase {
     /// A throwaway signing key, so the suite never needs the real private half.
     let signer = Curve25519.Signing.PrivateKey()
@@ -886,7 +907,9 @@ final class LicenceSigningTests: XCTestCase {
         XCTAssertTrue(c!.expires < Date(), "but the period has ended")
     }
 }
+#endif
 
+#if PROTECT_PLUS
 final class TrialStampTests: XCTestCase {
     /// ⚠️ Clearing the preference alone must not buy another fourteen days.
     func testClearingTheDefaultsDoesNotResetTheTrial() throws {
@@ -902,3 +925,4 @@ final class TrialStampTests: XCTestCase {
                        "the on-disk stamp should have restored the original date")
     }
 }
+#endif

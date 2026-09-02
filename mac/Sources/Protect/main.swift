@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ⚠️ Model is @MainActor, so the delegate that owns it must be too — the
     // alternative is a nonisolated init reaching into main-actor state.
     let model = Model()
+    #if PROTECT_PLUS
     /// The Protect+ layer: menu bar, schedule, transcript watcher. Owned here
     /// so it outlives the window.
     var resident: Resident?
+    #endif
 
     // ⚠️ ONE SELECTOR, THREE ITEMS. NSMenuItem needs an Objective-C target and
     // a SwiftUI view is not one, so which scan an item runs travels in its tag
@@ -36,8 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ note: Notification) {
         makeWindow()
+        #if PROTECT_PLUS
         resident = Resident(model: model, showWindow: { [weak self] in self?.showWindow() })
         model.resident = { [weak self] in self?.resident }
+        #endif
         showWindow()
     }
 
@@ -117,7 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ⚠️ CLOSING THE WINDOW MUST NOT KILL THE WATCH. When keep-watch is on the
     // app lives in the menu bar; quitting is the menu's Quit item, on purpose.
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool {
-        !(resident?.enabled ?? false)
+        #if PROTECT_PLUS
+        return !(resident?.enabled ?? false)
+        #else
+        // Without the resident layer there is nothing to stay alive for.
+        return true
+        #endif
     }
 }
 

@@ -24,13 +24,15 @@ to a model's guess. Nothing it shows you carries the secret it found.
 
 **The engine is open source (MIT).** Everything that finds and explains a problem
 — every rule in `mac/Sources/ProtectCore`, the CLI, the exports. Clone it, read
-it, run it, build on it.
+it, run it, build on it. Cloning this repository and running `swift build` gives
+you the complete free scanner, with all three scans and nothing stubbed out.
 
 **The resident layer is a subscription (Protect+).** The part that runs *on your
 behalf*: a menu bar presence, scans re-run on a schedule that reports what
 changed since last week, and a watcher that flags a key the moment one is written
 to a conversation log — instead of whenever you next press the button.
 
+Its source is not in this repository — it ships compiled, inside the signed app.
 Nothing is withheld from the free scanner to force an upgrade. The paid thing is
 a genuinely different thing: it keeps watch, so you do not have to remember to.
 

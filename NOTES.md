@@ -644,8 +644,34 @@ recreate with:
   then mount it and `spctl --assess --type execute`. Anything from a browser
   carries that flag and it is what Gatekeeper actually reacts to.
 
+## The paid layer lives in another repo
+
+- The private repo is `templetongroup/templeton-protect-plus`. `scripts/link-plus.sh`
+  symlinks it into `mac/Sources/{ProtectCore,Protect}/Plus/`; `--off` unlinks it,
+  which is how you check the free build still stands alone. Both folders are
+  gitignored, so the private sources cannot land in the public repo by accident.
+- ⚠️ **`swift build` picks free-or-paid while the MANIFEST is evaluated**, from
+  `hasPlus()` in `mac/Package.swift`, and **SwiftPM caches manifests by content**.
+  `touch Package.swift` does not clear it. Adding or removing the Plus folders
+  without deleting `mac/.build/manifest.db`, `mac/.build/manifests` and
+  `~/.swiftpm/cache/manifests` leaves the previous answer in force, and the build
+  fails with ordinary-looking `cannot find 'Resident' in scope` — so you go
+  hunting through the `#if PROTECT_PLUS` guards, which are fine. It cost an hour
+  in each direction: a "free build" that was really the cached paid one, and a
+  paid build that failed as though a guard were wrong. `link-plus.sh` clears all
+  three now; if you touch the Plus folders by hand, clear them yourself.
+- ⚠️ **The licensing tests used to run against the installed app.** `Licensing`
+  writes its licence and first-run stamp to `~/Library/Application Support/
+  Templeton Protect/`, and the tests had no override, so `swift test` read and
+  rewrote the real ones. It passed on the day of an install and then failed
+  forever after with `trial(daysLeft: 13)` vs `14` — the suite was measuring how
+  long Protect had actually been on this Mac. `Licensing.storageOverride` now
+  points every test at a throwaway directory. A test that rebuilds that path by
+  hand defeats it; use `Licensing.licenceLocation`.
+- `forget()` deliberately leaves the first-run stamp. Giving up a licence must
+  not hand back a fresh trial.
+
 ## Still open
 
-- Where the DMG is actually hosted for download, and whether it auto-updates.
 - Tony to rotate the keys the scan found (TG-281).
-- Repo public/private and the licence split (TG-282).
+- Sales backend: a webhook that mints and emails a licence on a completed order.
