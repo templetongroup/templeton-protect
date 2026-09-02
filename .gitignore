@@ -6,3 +6,6 @@ node_modules/
 
 # The private Protect+ layer, linked in by scripts/link-plus.sh
 mac/Sources/*/Plus/
+
+# Minted licence keys. Every line is a working subscription.
+licences-*.csv

@@ -66,7 +66,7 @@ func unb64url(_ s: String) -> Data? {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    print("usage: generate | issue <email> <days> | verify <key>")
+    print("usage: generate | issue <email> <days> | batch <count> <days> [tag] | verify <key>")
     exit(2)
 }
 
@@ -105,6 +105,57 @@ case "issue":
     let body = Data(payload.utf8)
     guard let sig = try? key.signature(for: body) else { print("signing failed"); exit(1) }
     print("TP1-\(b64url(body)).\(b64url(sig))")
+
+/*
+ Mint a stack of keys for the store to hand out.
+
+ ⚠️ THE CLOCK STARTS AT MINTING, NOT AT PURCHASE. A key carries an absolute
+ expiry date, so one that sits unsold in the store for five months sells with
+ seven months left on it. Mint in small, dated batches and top the store up —
+ do not mint a year of inventory. Making the term start at activation instead
+ needs a new key version and an app that understands it (TG-300).
+
+ The `e` field carries a batch id rather than a buyer, because nobody knows who
+ the buyer is at minting time. Nothing enforces the email — it is there so a key
+ posted publicly can be traced to the batch it came from.
+ */
+case "batch":
+    guard args.count >= 3, let count = Int(args[1]), let days = Int(args[2]), count > 0 else {
+        print("usage: batch <count> <days> [tag]"); exit(2)
+    }
+    guard let raw = keychainRead(),
+          let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
+        print("no signing key — run: swift scripts/licence-tool.swift generate"); exit(1)
+    }
+    let stamp = ISO8601DateFormatter()
+    stamp.formatOptions = [.withFullDate]
+    let today = stamp.string(from: Date())
+    let tag = args.count >= 4 ? args[3] : today
+    let expiresAt = Date().addingTimeInterval(Double(days) * 86_400)
+    let expires = Int(expiresAt.timeIntervalSince1970)
+
+    var rows = ["key,batch,expires"]
+    var minted = 0
+    for _ in 0..<count {
+        // Short random id: unique enough to trace, and it does not leak how many
+        // have been sold by counting upwards in public.
+        let id = (0..<6).map { _ in "abcdefghjkmnpqrstuvwxyz23456789".randomElement()! }
+        let payload = #"{"e":"\#(tag)-\#(String(id))","x":\#(expires)}"#
+        let body = Data(payload.utf8)
+        guard let sig = try? key.signature(for: body) else { print("signing failed"); exit(1) }
+        rows.append("TP1-\(b64url(body)).\(b64url(sig)),\(tag)-\(String(id)),\(expiresAt.ISO8601Format())")
+        minted += 1
+    }
+
+    let out = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("licences-\(tag).csv")
+    do { try rows.joined(separator: "\n").appending("\n").write(to: out, atomically: true, encoding: .utf8) }
+    catch { print("could not write \(out.path): \(error)"); exit(1) }
+    print("\(minted) keys, each good until \(expiresAt.formatted(date: .abbreviated, time: .omitted))")
+    print(out.path)
+    print("")
+    print("Upload that file as the store's licence key list. Keep it out of git —")
+    print("every line in it is a working subscription.")
 
 case "verify":
     guard args.count >= 2 else { print("usage: verify <key>"); exit(2) }
