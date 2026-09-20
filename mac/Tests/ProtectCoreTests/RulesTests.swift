@@ -862,6 +862,132 @@ final class OffensiveHarnessTests: XCTestCase {
 }
 
 #if PROTECT_PLUS
+/// The deep audit reads a file another program wrote. These pin what it trusts.
+final class DeepAuditTests: XCTestCase {
+    private func tempDir() -> URL {
+        let u = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("audit-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: u) }
+        return u
+    }
+
+    private let sample = """
+    [
+      {"verdict":"confirmed","fingerprint":"auth/missing-check@api/users.ts:41","title":"Any signed-in user can read any profile",
+       "description":"The handler never compares the requested id to the caller.","root_cause":"No ownership check.",
+       "intended_behavior":"Only the owner or an admin may read a profile.",
+       "trace":[{"kind":"entrypoint","file":"api/users.ts","line":41,"scope":"getProfile","description":"reads :id from the path"}],
+       "evidence":[{"file":"api/users.ts","line":44,"description":"query uses the id directly"}],
+       "conditions":[],"execution":{"attacker_perspective":"a","payloads":["b"],"instructions":["c"],"observed_result":"d"},
+       "remediation":{"strategy":"Compare req.user.id to the requested id before querying."},
+       "severity":{"likelihood":"high","impact":"high","overall":"high"}},
+      {"verdict":"needs_validation","fingerprint":"ssrf/fetch@lib/fetch.ts:9","title":"Possible SSRF","description":"x"},
+      {"verdict":"needs_validation","fingerprint":"race/token@auth.ts:80","title":"Possible race","description":"x"},
+      {"verdict":"rejected","fingerprint":"xss/render@ui.tsx:3","title":"Not exploitable","description":"x"},
+      {"verdict":"confirmed","fingerprint":"broken-record","title":"missing description"}
+    ]
+    """
+
+    func testOnlyTheLiteralConfirmedVerdictReachesTheList() throws {
+        let d = tempDir()
+        try sample.write(to: d.appendingPathComponent("findings.json"), atomically: true, encoding: .utf8)
+        try "{\"run_status\":\"complete\"}".write(to: d.appendingPathComponent("run-metadata.json"), atomically: true, encoding: .utf8)
+        try "# r".write(to: d.appendingPathComponent("REPORT.md"), atomically: true, encoding: .utf8)
+        let o = try DeepAudit.parse(outputDirectory: d)
+        // The broken confirmed record is skipped, not promoted and not fatal.
+        XCTAssertEqual(o.confirmed.count, 1)
+        XCTAssertEqual(o.confirmed.first?.title, "Any signed-in user can read any profile")
+        XCTAssertEqual(o.confirmed.first?.entry?.line, 41)
+        XCTAssertEqual(o.needsValidation, 2)
+        XCTAssertEqual(o.rejected, 1)
+        XCTAssertEqual(o.runStatus, "complete")
+        XCTAssertNotNil(o.report)
+        XCTAssertNil(o.needsValidationReport)
+    }
+
+    /// ⚠️ A run that wrote nothing is a failure with the exit code, never an
+    /// empty success — "0 confirmed" on a crashed agent would read as clean.
+    func testNoFindingsFileIsAFailureNotAQuietResult() {
+        let d = tempDir()
+        XCTAssertThrowsError(try DeepAudit.parse(outputDirectory: d, exitCode: 1)) { e in
+            guard case DeepAudit.Failure.noFindings(let code)? = e as? DeepAudit.Failure else { return XCTFail("\(e)") }
+            XCTAssertEqual(code, 1)
+        }
+    }
+
+    /// ⚠️ THE ONE THAT MATTERS. A security product must never launch an agent
+    /// with its permission checks turned off, and shell access is node only.
+    func testTheAgentIsNeverLaunchedWithPermissionsBypassed() {
+        let agent = DeepAudit.Agent(name: "Claude Code", executable: URL(fileURLWithPath: "/x/claude"))
+        let args = DeepAudit.arguments(for: agent, prompt: "p", skill: URL(fileURLWithPath: "/s"),
+                                       target: URL(fileURLWithPath: "/t"), output: URL(fileURLWithPath: "/o"))
+        XCTAssertFalse(args.contains { $0.contains("dangerously") })
+        XCTAssertFalse(args.contains("bypassPermissions"))
+        XCTAssertTrue(args.contains("Bash(node:*)"))
+        XCTAssertFalse(args.contains("Bash"))
+        XCTAssertFalse(args.contains("Bash(*)"))
+        XCTAssertTrue(args.contains("/o"), "the output directory must be writable")
+    }
+
+    /// Nobody is there to answer, so nothing may be left for the agent to ask.
+    func testThePromptDecidesEverythingTheSkillWouldAsk() {
+        let p = DeepAudit.prompt(skill: URL(fileURLWithPath: "/s"), target: URL(fileURLWithPath: "/t"),
+                                 output: URL(fileURLWithPath: "/o"), profile: .quick)
+        for needle in ["FULL AUDIT MODE", "Profile: quick", "maximum of 12 agent invocations", "/o", "needs_validation", "do not ask", "sandbox"] {
+            XCTAssertTrue(p.lowercased().contains(needle.lowercased()), "prompt should state: \(needle)")
+        }
+    }
+
+    /// Standard is the skill as written: no cap, and the blurb says what that costs.
+    func testStandardIsUncappedAndSaysSo() {
+        XCTAssertNil(DeepAudit.Profile.standard.budget)
+        XCTAssertEqual(DeepAudit.Profile.quick.budget, 12)
+        XCTAssertTrue(DeepAudit.prompt(skill: URL(fileURLWithPath: "/s"), target: URL(fileURLWithPath: "/t"),
+                                       output: URL(fileURLWithPath: "/o"), profile: .standard).contains("unset (null)"))
+    }
+
+    /// ⚠️ The Dock gives an app a bare PATH, so `which` finds nothing. The
+    /// agent has to be found by looking, and preference order is Claude first.
+    func testAgentsAreFoundByPathNotByWhich() throws {
+        let home = tempDir()
+        let bin = home.appendingPathComponent(".local/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        for name in ["codex", "claude"] {
+            let f = bin.appendingPathComponent(name)
+            try "#!/bin/sh\n".write(to: f, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: f.path)
+        }
+        let found = DeepAudit.availableAgents(home: home.path)
+        XCTAssertEqual(found.map(\.name), ["Claude Code", "Codex"])
+        XCTAssertEqual(DeepAudit.availableAgents(home: tempDir().path).count, 0)
+    }
+
+    /// ⚠️ The first real run died with only "You've hit your session limit ·
+    /// resets 2:20am" in the log. That line has to reach the person as what it
+    /// is, not as "exit 1, see log".
+    func testAPlanLimitIsRecognisedFromTheAgentsOwnWords() throws {
+        let d = tempDir()
+        let log = d.appendingPathComponent("agent.log")
+        try "You've hit your session limit · resets 2:20am (America/New_York)\n".write(to: log, atomically: true, encoding: .utf8)
+        let line = DeepAudit.planLimitLine(inLog: log)
+        XCTAssertEqual(line, "You've hit your session limit · resets 2:20am (America/New_York)")
+        try "Wrote REPORT.md\n".write(to: log, atomically: true, encoding: .utf8)
+        XCTAssertNil(DeepAudit.planLimitLine(inLog: log))
+    }
+
+    /// Output goes outside the target, per repository, per run.
+    func testEachRunGetsItsOwnFolderOutsideTheTarget() {
+        let root = tempDir()
+        let t = URL(fileURLWithPath: "/Users/x/Projects/widget")
+        let a = DeepAudit.outputDirectory(for: t, root: root)
+        XCTAssertTrue(a.path.hasPrefix(root.path))
+        XCTAssertTrue(a.path.contains("/widget/run-"))
+        XCTAssertFalse(a.path.hasPrefix(t.path))
+    }
+}
+#endif
+
+#if PROTECT_PLUS
 /// The shape of a sold key: a term that starts when the customer does.
 final class ActivationTermTests: XCTestCase {
     private let signer = Curve25519.Signing.PrivateKey()

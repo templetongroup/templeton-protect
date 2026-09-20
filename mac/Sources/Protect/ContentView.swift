@@ -464,6 +464,13 @@ struct ContentView: View {
                     runStrip
                     deltaLine
                     if let r = model.combined { summary(r); findings(r) }
+                    #if PROTECT_PLUS
+                    // ⚠️ BELOW the fact-anchored list and visibly its own thing.
+                    // See DeepAuditView for why it must never be merged in.
+                    if model.has(.code), model.codeTarget != nil, model.entitlement.allowsResident {
+                        DeepAuditView(model: model)
+                    }
+                    #endif
                 }
                 .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity)

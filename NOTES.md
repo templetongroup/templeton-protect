@@ -747,6 +747,38 @@ recreate with:
   step that still separates by tone at 32px; `#2A4C96` and above start trading
   places with Radiant, which is the failure this is guarding against.
 
+## The deep audit (Protect+ hands a folder to the user's own agent)
+
+- The skill is vendored unmodified at `mac/Resources/security-audit/` (MIT,
+  `NOTICE` beside it) and shipped in the bundle by both build scripts. The
+  orchestration — prompt, arguments, environment, parsing — is `DeepAudit.swift`
+  in the private repo; the section under the code results is `DeepAuditView`.
+- ⚠️ **The agent's environment is built, not inherited, and `USER` is not
+  optional.** With `PATH` and `HOME` alone, Claude Code says "Not logged in" on
+  a Mac that is logged in: its Keychain credential is looked up by user name.
+  `TMPDIR` goes in too. Found by running the real command with the built
+  environment — reading the code would never have said so.
+- ⚠️ **Never launch the agent with `--dangerously-skip-permissions` or
+  `bypassPermissions`.** Reads where pointed, writes only to the output folder
+  via `--add-dir`, shell only as `Bash(node:*)` for the skill's validators.
+  A test pins it; keep the test.
+- ⚠️ **`claude -p` writes nothing until it is finished.** The log stays empty
+  for the whole run, so anything that tails it for progress shows nothing.
+- ⚠️ **It spends the user's plan, and an uncapped run can spend all of it.** Two
+  quick-profile runs on a three-file fixture both died with "You've hit your
+  session limit" on a Max plan: every hunter and verifier is a sub-agent and
+  each is a full turn. Quick now carries `budget: 12` through the skill's own
+  gate; Standard is uncapped and says so. A plan limit is detected from the
+  agent's own line in the log and shown with its reset time. **Do not "just try
+  it" on a real project to see** — that is a session window of Tony's plan.
+- The skill refuses to execute target code without an OS sandbox and files
+  those leads as `needs_validation`. Expect few `confirmed` records on real
+  code; that is the skill being honest, and the UI must count and point at the
+  needs-validation report rather than showing "0 confirmed" as a clean result.
+- Output lives under `~/Library/Application Support/Templeton Protect/audits/
+  <repo>/run-<stamp>/`, outside the target as the skill requires, and per repo
+  so a later run can read prior ledgers.
+
 ## Still open
 
 - Tony to rotate the keys the scan found (TG-281).

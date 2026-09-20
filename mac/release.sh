@@ -49,6 +49,9 @@ cp Resources/swirl.png "$APP/Contents/Resources/swirl.png"
 cp Resources/swirl-mark.png "$APP/Contents/Resources/swirl-mark.png"
 cp Resources/templeton-tech.png "$APP/Contents/Resources/templeton-tech.png"
 cp Resources/protect-lockup.png "$APP/Contents/Resources/protect-lockup.png"
+# The vendored audit skill, handed to the user's own coding agent by Protect+.
+rm -rf "$APP/Contents/Resources/security-audit"
+cp -R Resources/security-audit "$APP/Contents/Resources/security-audit"
 
 # ⚠️ SwiftPM DOES NOT COMPILE .metal FILES. Declaring them as a resource copies
 # the SOURCE into the bundle and nothing else — `ShaderLibrary.default` then

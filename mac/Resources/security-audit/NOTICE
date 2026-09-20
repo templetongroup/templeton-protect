@@ -1,0 +1,7 @@
+Cloudflare Security Audit Skill
+https://github.com/cloudflare/security-audit-skill
+Vendored at commit c1c8a8c on 2026-09-19. MIT licence, in LICENSE beside this file.
+
+Templeton Protect ships these files unmodified and hands them to the coding
+agent already installed on the user's Mac. Protect does not run the audit
+itself, and nothing here is part of the fact-anchored scanner.

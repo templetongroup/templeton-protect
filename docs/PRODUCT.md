@@ -126,3 +126,36 @@ watcher segfault before it shipped.
 
 Still open before this sells: the payment rails and licensing server (the store
 behind `Plan`), auto-update (TG-286), and the public-repo cutover (TG-282).
+
+## Update — 19 Sep 2026: the deep audit, and where the model is allowed in
+
+Tony: *"should we add this to templeton protect?"* — Cloudflare's
+[security-audit skill](https://github.com/cloudflare/security-audit-skill), an
+MIT playbook that turns a coding agent into an auditor: separate agents hunt,
+separate agents try to disprove each candidate, and only survivors are marked
+`confirmed`. It reaches what a byte pattern cannot — a missing ownership check,
+a trust boundary crossed — which is the whole of the scanner's blind spot.
+
+It is in Protect+ as **Deep audit**, and the two rules of the spine decide its
+shape rather than being bent for it:
+
+- **Anchored findings stay anchored.** The audit's output is its own section
+  under the code scan, with its own label ("AI audit · confirmed by a second
+  agent"), its own card shape, and it is never merged into the list above. A
+  model may raise a finding; it may not be mistaken for a fact.
+- **The fixer is never the only checker** is the skill's own design — the agent
+  that finds is not the agent that confirms — which is why this one earns a
+  place and a generic "ask the model what's wrong" never would.
+
+Three things it does not do, on purpose:
+
+- **Protect does not run the audit.** The user's own installed agent does, on
+  the user's own plan. The app still has no network client and no key of ours.
+- **It does not run the target's code.** There is no OS sandbox, and the skill
+  refuses execution without one; those leads become `needs_validation`, which
+  the UI counts and points at rather than hides. Expect the confirmed list to be
+  short and honest.
+- **It does not launch the agent with permissions bypassed.** Reads where it is
+  pointed, writes only to its own output folder, shell access to `node` alone
+  for the skill's validators. A security product doing otherwise would be the
+  finding. Pinned by a test.
