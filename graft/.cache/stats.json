@@ -1,12 +1,17 @@
 {
-  "nodeCount": 0,
-  "edgeCount": 0,
-  "languages": [],
-  "totalCount": 0,
+  "nodeCount": 684,
+  "edgeCount": 1451,
+  "languages": [
+    "javascript",
+    "python",
+    "swift",
+    "typescript"
+  ],
+  "totalCount": 684,
   "readyCount": 0,
   "staleCount": 0,
-  "dirty": true,
+  "dirty": false,
   "syncing": false,
-  "syncedAt": null,
+  "syncedAt": "2026-10-06T14:04:39.359Z",
   "lastFile": "RulesTests.swift"
 }

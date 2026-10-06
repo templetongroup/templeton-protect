@@ -1,12 +1,16 @@
 {
-  "lastQuery": "worth adding to protect?\nhttps://x.com/roundtablespace/status/2107202918508269573?s=43",
+  "lastQuery": "im in claude mac app",
   "perAgentQuery": {},
   "graftReads": 0,
   "sourceReads": 0,
   "savedTokens": 0,
-  "injectedPointers": [],
-  "nudges": 0,
-  "inputCostMicros": 4575613,
-  "inputTokensBilled": 3280790,
-  "lastBillingUuid": "aa50d927-f342-467f-9d70-d997b5e7c7b1"
+  "injectedPointers": [
+    "mac/Sources/Protect/main.swift:L13-L131",
+    "src/app.ts",
+    "mac/Sources/ProtectCore/Scan.swift:L12-L19"
+  ],
+  "nudges": 2,
+  "inputCostMicros": 17105802,
+  "inputTokensBilled": 15723555,
+  "lastBillingUuid": "372f7c19-e55a-424b-a6f4-5c9861654014"
 }

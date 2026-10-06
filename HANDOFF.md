@@ -1,3 +1,11 @@
+> ⚠️ **The 0.9.1 commit says "Ref TG-519" and that is wrong.** The hidden-unicode
+> rule is [TG-607](https://linear.app/templetongroup/issue/TG-607). TG-519 is a
+> Radiant issue about token efficiency, filed the same day and since archived.
+> Linear's connector had dropped out of the session, so I guessed the next
+> number and the backlog had moved 88 issues in 17 days. **Do not guess an issue
+> number.** If Linear is unreachable, say so and file it when it comes back —
+> which is what finally happened here.
+
 > ⚠️ **Commit a0756a4 says "Fixes TG-303" and that is wrong.** The work in it is
 > [TG-315](https://linear.app/templetongroup/issue/TG-315) — the redaction fix
 > rewriting a transcript on one click. TG-303 is the notifications issue and was
