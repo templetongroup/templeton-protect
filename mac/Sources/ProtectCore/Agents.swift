@@ -336,6 +336,29 @@ public func auditAgents(home: String = NSHomeDirectory()) -> [Finding] {
             verified: true, fix: nil, guidance: nil))
     }
 
+    // ── invisible characters in instruction files ──────────────────────
+    //
+    // ⚠️ THE ONLY FINDING HERE THE EYE CANNOT CATCH. Every other rule in this
+    // file is about something you could see if you opened the file. Tag
+    // characters (U+E0000–E007F) carry a full sentence that renders as nothing
+    // at all, so an instruction file can hold orders the agent obeys and the
+    // owner cannot read — in their own editor, in a diff, in a review.
+    for candidate in [".claude/CLAUDE.md", "CLAUDE.md", "AGENTS.md"] {
+        let path = (home as NSString).appendingPathComponent(candidate)
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+        let hits = hiddenCharacters(in: text)
+        guard !hits.isEmpty else { continue }
+        findings.append(Finding(
+            rule: "hidden-unicode-in-instructions", layer: "harness", severity: .critical,
+            title: "Invisible characters are hiding in your agent's standing instructions",
+            where_: display(path),
+            evidence: hits.map { "\($0.name) ×\($0.count) on line \($0.line)" }.joined(separator: ", "),
+            remedy: "Open the file at those lines and retype them. Nothing legitimate in a Markdown instruction file needs these characters, and an editor will not show you what you are deleting.",
+            validation: "Re-run the scan: a clean file reports nothing here.",
+            plain: "Some characters take up no space on screen. A line that looks blank, or a word that looks ordinary, can carry a whole extra sentence that your assistant reads as an instruction and you cannot see — not in your editor, not in a diff, not in a code review. Finding them is the only way to know they are there.",
+            verified: true, fix: nil, guidance: nil))
+    }
+
     // ── an offensive harness wired to an assistant ─────────────────────
     //
     // Read out of the same configuration already parsed above: an MCP server,
@@ -455,5 +478,53 @@ extension Array where Element: Hashable {
     func uniqued() -> [Element] {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }
+    }
+}
+
+/*
+ Characters that take up no space on screen, counted by line.
+
+ ⚠️ TWO LEGITIMATE USES ARE EXCLUDED, OR THIS RULE CRIES WOLF ON ORDINARY
+ FILES. A byte-order mark at the very start of a file is how editors have
+ always written UTF-8. And a zero-width joiner between two emoji is what the
+ joiner is for — 👨‍👩‍👧 is three people and two joiners — so it is reported only
+ when it sits beside ASCII, where it is doing something else.
+
+ ⚠️ THE EVIDENCE NAMES THE CHARACTER, NEVER PRINTS IT. Echoing the hidden run
+ back into a finding, an export or a notification would copy the payload
+ somewhere new, and it would still be invisible when it got there.
+ */
+public func hiddenCharacters(in text: String) -> [(line: Int, name: String, count: Int)] {
+    var counts: [Int: [String: Int]] = [:]
+    for (i, raw) in text.components(separatedBy: .newlines).enumerated() {
+        let scalars = Array(raw.unicodeScalars)
+        for (j, s) in scalars.enumerated() {
+            guard let name = hiddenCharacterName(s) else { continue }
+            if s.value == 0xFEFF, i == 0, j == 0 { continue }
+            if s.value == 0x200D || s.value == 0x200C {
+                let before = j > 0 ? scalars[j - 1].value : 0
+                let after = j + 1 < scalars.count ? scalars[j + 1].value : 0
+                if before > 0x2000 && after > 0x2000 { continue }
+            }
+            counts[i + 1, default: [:]][name, default: 0] += 1
+        }
+    }
+    return counts
+        .flatMap { line, byName in byName.map { (line: line, name: $0.key, count: $0.value) } }
+        .sorted { ($0.line, $0.name) < ($1.line, $1.name) }
+}
+
+func hiddenCharacterName(_ s: Unicode.Scalar) -> String? {
+    switch s.value {
+    // A whole sentence fits in here and renders as nothing at all.
+    case 0xE0000...0xE007F: return "Unicode tag characters"
+    // Trojan Source: reorders what you read without changing what is parsed.
+    case 0x202A...0x202E, 0x2066...0x2069: return "bidirectional overrides"
+    case 0x200B: return "zero-width space"
+    case 0x200C: return "zero-width non-joiner"
+    case 0x200D: return "zero-width joiner"
+    case 0x2060, 0xFEFF: return "word joiner or byte-order mark"
+    case 0x00AD: return "soft hyphen"
+    default: return nil
     }
 }

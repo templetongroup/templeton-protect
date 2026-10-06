@@ -779,6 +779,25 @@ recreate with:
   <repo>/run-<stamp>/`, outside the target as the skill requires, and per repo
   so a later run can read prior ledgers.
 
+## Invisible characters in instruction files
+
+- `hidden-unicode-in-instructions` is the only rule here whose finding cannot be
+  seen by opening the file. Tag characters (U+E0000–E007F) carry a readable
+  sentence that renders as nothing, so standing instructions can hold orders the
+  owner cannot read in an editor, a diff, or a review.
+- ⚠️ **Two exclusions keep it from crying wolf, and both are load-bearing.** A
+  byte-order mark at offset 0 is how editors have always written UTF-8. A
+  zero-width joiner between two emoji is what the joiner is for — a family emoji
+  is three people and two joiners — so it is reported only beside ASCII. Without
+  the second, every instruction file with an emoji in it lights up critical.
+- ⚠️ **The evidence names the character and never prints it.** Echoing the hidden
+  run into a finding, an export or a notification copies the payload somewhere
+  new, still invisible.
+- Checked against the real `~/.claude/CLAUDE.md`, `AGENTS.md`, `CLAUDE.md` and
+  `NOTES.md` before shipping: all clean, no false positive.
+- Home-level instruction files only, matching `instructions-writable`. A project
+  `CLAUDE.md` inside a scanned repository is not covered yet.
+
 ## Still open
 
 - Tony to rotate the keys the scan found (TG-281).
