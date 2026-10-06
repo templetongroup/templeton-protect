@@ -494,6 +494,28 @@ public func scanCode(at root: String,
 
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
 
+        // ── invisible characters in this repository's own instructions ─
+        //
+        // The same rule as `hidden-unicode-in-instructions` in the agent scan,
+        // which reads the three files in the home directory. A checked-in
+        // CLAUDE.md travels: it arrives with a clone, a pull request, a
+        // template repository, and it is read as standing orders by whoever
+        // opens the project next.
+        if isInstructionFile(base) {
+            let hits = hiddenCharacters(in: text)
+            if !hits.isEmpty {
+                findings.append(Finding(
+                    rule: "hidden-unicode-in-instructions", layer: "code", severity: .critical,
+                    title: "Invisible characters are hiding in this project's agent instructions",
+                    where_: display(path),
+                    evidence: hits.map { "\($0.name) ×\($0.count) on line \($0.line)" }.joined(separator: ", "),
+                    remedy: "Open the file at those lines and retype them. Then check the history — if this arrived in a pull request, it was put there on purpose.",
+                    validation: "Re-run the scan: a clean file reports nothing here.",
+                    plain: "Some characters take up no space on screen. A line that looks blank can carry a whole sentence that an assistant reads as an instruction and nobody can see — not in an editor, not in a diff, not in a code review. This file is in the repository, so it reaches everyone who clones it.",
+                    verified: true, fix: nil, guidance: nil))
+            }
+        }
+
         // ── a private key written inside another file ──────────────────
         if !isSecretFile, holdsPrivateKey(text) {
             findings.append(Finding(

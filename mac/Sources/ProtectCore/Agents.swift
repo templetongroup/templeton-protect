@@ -528,3 +528,21 @@ func hiddenCharacterName(_ s: Unicode.Scalar) -> String? {
     default: return nil
     }
 }
+
+/*
+ Files an agent reads as standing orders when it opens a project.
+
+ ⚠️ NAMES, NOT EXTENSIONS. Every `.md` in a repository is prose somebody wrote
+ for other people; only these are read by a machine as instructions it should
+ follow. Flagging a zero-width character in an ordinary README would bury the
+ one file where it means something.
+ */
+func isInstructionFile(_ basename: String) -> Bool {
+    let names: Set<String> = [
+        "CLAUDE.md", "AGENTS.md", "CONVENTIONS.md", "GEMINI.md",
+        ".cursorrules", ".windsurfrules", ".clinerules",
+        "copilot-instructions.md",
+    ]
+    // Cursor keeps rule files as .mdc under .cursor/rules/.
+    return names.contains(basename) || basename.hasSuffix(".mdc")
+}

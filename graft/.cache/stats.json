@@ -9,9 +9,9 @@
   ],
   "totalCount": 684,
   "readyCount": 0,
-  "staleCount": 0,
-  "dirty": false,
+  "staleCount": 2,
+  "dirty": true,
   "syncing": false,
   "syncedAt": "2026-10-06T14:04:39.359Z",
-  "lastFile": "RulesTests.swift"
+  "lastFile": "Code.swift"
 }

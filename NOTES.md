@@ -795,8 +795,14 @@ recreate with:
   new, still invisible.
 - Checked against the real `~/.claude/CLAUDE.md`, `AGENTS.md`, `CLAUDE.md` and
   `NOTES.md` before shipping: all clean, no false positive.
-- Home-level instruction files only, matching `instructions-writable`. A project
-  `CLAUDE.md` inside a scanned repository is not covered yet.
+- Fires from **both** scans: the agent scan reads the three files in the home
+  directory, the code scan reads a scanned repository's own. A checked-in
+  CLAUDE.md travels with a clone, a pull request or a template repo, so the
+  remedy there also says to check the history.
+- ⚠️ **Matched by NAME, never by extension** (`isInstructionFile`). Every other
+  `.md` in a repository is prose for people; only these are read by a machine as
+  orders. Flagging a zero-width character in a README would bury the one file
+  where it means something — a test pins that a README stays quiet.
 
 ## Still open
 
